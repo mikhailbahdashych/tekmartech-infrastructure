@@ -1,0 +1,1270 @@
+# Tekmar MCP Tool Interface Specification
+# Boundary 3: Pipeline Service (tekmar-pipeline) ↔ MCP Servers (tekmar-integrations)
+#
+# Version: 1.0.0 (MVP)
+# Status: Active
+# Last updated: 2026-03-19
+#
+# This specification defines four things:
+#
+#   1. Tool Catalog — how MCP servers declare the tools they offer,
+#      and how the catalog is assembled for the Interpreter.
+#
+#   2. Query Plan — the structured output of the Interpreter that
+#      describes the sequence of MCP tool invocations needed to
+#      answer a user's question. This schema governs the JSONB
+#      stored in queries.query_plan (see data-model.yaml).
+#
+#   3. Tool Invocation — the request and response format for
+#      individual MCP tool calls made by the Execution Engine.
+#
+#   4. Transparency Log — the format for recording every tool
+#      invocation during query execution. This schema governs
+#      the JSONB stored in queries.transparency_log (see
+#      data-model.yaml).
+#
+# Cross-references:
+#   - data-model.yaml: integrations.type must match server_type values
+#     defined in this specification.
+#   - data-model.yaml: queries.query_plan JSONB conforms to the
+#     query_plan schema defined in this specification.
+#   - data-model.yaml: queries.transparency_log JSONB conforms to the
+#     transparency_log schema defined in this specification.
+#   - internal-api.yaml: references query_plan, transparency_log,
+#     tool_catalog, and credential_envelope schemas when transporting
+#     them between the Application API and the Pipeline Service.
+
+spec_version: "1.0.0"
+
+# =============================================================================
+# 1. MCP SERVER REGISTRATION AND TOOL CATALOG
+# =============================================================================
+# Each MCP server in tekmar-integrations registers itself by declaring
+# its server metadata and the tools it offers. The Pipeline Service
+# reads these declarations at startup to build a master tool registry.
+#
+# When a query is submitted, the Application API tells the Pipeline
+# Service which integration types are in scope (based on the user's
+# connected integrations). The Pipeline Service filters the master
+# registry to produce a query-specific tool catalog containing only
+# the tools available for the integrations in scope. This filtered
+# catalog is what the Interpreter receives.
+# =============================================================================
+
+mcp_server:
+  description: >
+    The metadata that each MCP server declares about itself.
+    Used by the Pipeline Service to identify and categorize
+    servers, and to match them against integration types from
+    the database.
+  fields:
+    server_type:
+      type: string
+      required: true
+      description: >
+        Unique identifier for the external system this MCP server
+        handles. Must exactly match the integrations.type values
+        in the data model. This is the key that connects a
+        database integration record to the MCP server that
+        operates it.
+      allowed_values_mvp:
+        - aws
+        - google_workspace
+        - github
+
+    server_name:
+      type: string
+      required: true
+      description: >
+        Human-readable name of the MCP server. Used in logs and
+        debugging output. Example: "AWS MCP Server",
+        "Google Workspace MCP Server".
+
+    server_version:
+      type: string
+      required: true
+      description: >
+        Semantic version of the MCP server implementation.
+        Example: "1.0.0". Used for compatibility tracking.
+
+    description:
+      type: string
+      required: true
+      description: >
+        A brief description of what systems and data this MCP
+        server provides access to. Included in the tool catalog
+        sent to the Interpreter as additional context.
+
+    tools:
+      type: array of tool_definition
+      required: true
+      description: >
+        The list of tools this MCP server offers. Each tool
+        represents a single, well-defined read operation against
+        the external system.
+
+# -----------------------------------------------------------------------------
+# Tool Definition
+# -----------------------------------------------------------------------------
+# A single tool offered by an MCP server. Conforms to the MCP protocol
+# standard for tool declarations, with Tekmar-specific extensions.
+# -----------------------------------------------------------------------------
+
+tool_definition:
+  description: >
+    A single read-only operation that an MCP server can perform
+    against its external system. Each tool has a precise input
+    schema and output schema, enabling the Interpreter to
+    understand exactly what the tool does and how to use it.
+  fields:
+    tool_name:
+      type: string
+      required: true
+      description: >
+        Unique identifier for this tool within its MCP server.
+        Follows the convention: {server_type}.{operation}.
+        Examples: "aws.iam_list_users", "aws.cloudtrail_lookup_events",
+        "google_workspace.list_users", "google_workspace.get_mfa_status".
+        The server_type prefix ensures global uniqueness across
+        all MCP servers.
+
+    display_name:
+      type: string
+      required: true
+      description: >
+        Human-readable name shown in query plans and transparency
+        logs. Example: "List IAM Users", "Lookup CloudTrail Events".
+
+    description:
+      type: string
+      required: true
+      description: >
+        Detailed description of what this tool does, what data it
+        returns, and any important limitations or caveats. This
+        description is included in the tool catalog sent to the
+        Interpreter, so it directly affects the quality of query
+        plan generation. Be specific and precise. Example: "Lists
+        all IAM users in the AWS account, including their username,
+        creation date, last login timestamp, attached policies,
+        MFA device status, and access key metadata. Does not
+        return access key secret values."
+
+    category:
+      type: string
+      required: true
+      description: >
+        Functional category of this tool, used by the Interpreter
+        for tool selection and by the interface for tool catalog
+        browsing.
+      allowed_values:
+        - identity
+        - access_management
+        - audit_log
+        - configuration
+        - network
+        - storage
+        - compute
+
+    input_schema:
+      type: JSON Schema object
+      required: true
+      description: >
+        A JSON Schema definition describing the parameters this
+        tool accepts. The Interpreter uses this schema to construct
+        valid parameters when generating query plans. The Execution
+        Engine validates parameters against this schema before
+        invoking the tool. Every parameter must include a
+        description field in the schema for the Interpreter's
+        benefit.
+      example:
+        type: object
+        properties:
+          max_results:
+            type: integer
+            description: "Maximum number of users to return. Default 1000."
+            default: 1000
+            minimum: 1
+            maximum: 10000
+          path_prefix:
+            type: string
+            description: "Filter users by IAM path prefix. Default '/' (all users)."
+            default: "/"
+        required: []
+
+    output_schema:
+      type: JSON Schema object
+      required: true
+      description: >
+        A JSON Schema definition describing the structure of the
+        data this tool returns on success. Used by the Interpreter
+        to understand what data will be available for downstream
+        steps, and by the Output Engine to format results. The
+        output is always a JSON object, never a raw primitive.
+      example:
+        type: object
+        properties:
+          users:
+            type: array
+            items:
+              type: object
+              properties:
+                username:
+                  type: string
+                user_id:
+                  type: string
+                created_at:
+                  type: string
+                  format: date-time
+                last_login_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                mfa_enabled:
+                  type: boolean
+                attached_policies:
+                  type: array
+                  items:
+                    type: string
+                access_keys:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      access_key_id:
+                        type: string
+                      status:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                      last_used_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+          total_count:
+            type: integer
+
+    rate_limit:
+      type: object
+      required: false
+      description: >
+        Advisory rate limit information for this tool. The Execution
+        Engine uses this to pace invocations and avoid triggering
+        rate limits on the external system's API. If not specified,
+        the Execution Engine uses a conservative default.
+      fields:
+        max_calls_per_second:
+          type: number
+          description: >
+            Maximum number of invocations per second. May be
+            fractional (e.g., 0.5 means one call every two seconds).
+        max_calls_per_minute:
+          type: integer
+          description: >
+            Maximum number of invocations per minute. Takes
+            precedence over per-second limits for burst control.
+
+    pagination:
+      type: object
+      required: false
+      description: >
+        Declares whether this tool supports pagination and how
+        the Execution Engine should handle multi-page results.
+      fields:
+        supported:
+          type: boolean
+          description: Whether this tool returns paginated results.
+        cursor_parameter:
+          type: string
+          description: >
+            The name of the input parameter that accepts a
+            pagination cursor for requesting the next page.
+        cursor_response_field:
+          type: string
+          description: >
+            The dot-path to the field in the output that contains
+            the cursor for the next page. NULL or absent means
+            no more pages. Example: "pagination.next_cursor".
+
+# -----------------------------------------------------------------------------
+# Tool Catalog (assembled per query)
+# -----------------------------------------------------------------------------
+# This is the structure sent to the Interpreter when a query is submitted.
+# It contains only the tools available for the integrations in scope.
+# -----------------------------------------------------------------------------
+
+tool_catalog:
+  description: >
+    The filtered set of MCP tools available for a specific query,
+    assembled by the Pipeline Service based on which integrations
+    the user selected. This is the Interpreter's complete view of
+    what operations are possible. The Interpreter MUST NOT reference
+    any tool not present in this catalog.
+  fields:
+    integrations:
+      type: array of catalog_integration
+      description: >
+        One entry per in-scope integration, containing the
+        integration metadata and its available tools.
+
+catalog_integration:
+  description: >
+    A single integration's contribution to the tool catalog.
+  fields:
+    integration_id:
+      type: string (UUID)
+      description: >
+        The ID of the integration record from the database.
+        Used to correlate tool invocations with the correct
+        credential set.
+
+    server_type:
+      type: string
+      description: >
+        The MCP server type. Matches integrations.type from
+        the data model and server_type from the MCP server
+        registration.
+
+    display_name:
+      type: string
+      description: >
+        The human-readable name the admin gave this integration.
+        Included so the Interpreter can reference it in the
+        plan summary. Example: "Production AWS".
+
+    tools:
+      type: array of tool_definition
+      description: >
+        The tools available through this integration. These
+        are the tool_definition objects from the MCP server,
+        unchanged.
+
+# =============================================================================
+# 2. QUERY PLAN
+# =============================================================================
+# The structured output of the Interpreter. Describes a sequence of
+# MCP tool invocations that, when executed in order, will answer the
+# user's question.
+#
+# This schema governs the JSONB stored in queries.query_plan in the
+# data model. It is also transported via the internal API (Boundary 2)
+# and displayed to the user via the public API (Boundary 1) during the
+# approval step.
+# =============================================================================
+
+query_plan:
+  description: >
+    The complete execution plan generated by the Interpreter.
+    Contains an ordered list of steps, each specifying an MCP
+    tool to invoke, the parameters to pass, and how to handle
+    the result. The plan is deterministic: given the same plan,
+    the Execution Engine will produce the same sequence of MCP
+    tool calls (though the returned data may differ if the
+    external system's state has changed).
+  fields:
+    plan_id:
+      type: string (UUID)
+      required: true
+      description: >
+        Unique identifier for this plan, generated by the
+        Interpreter. Used to correlate the plan with its
+        execution in the transparency log.
+
+    plan_version:
+      type: string
+      required: true
+      default: "1.0"
+      description: >
+        Schema version of the plan format. Allows the Execution
+        Engine to handle plans from different Interpreter versions.
+
+    steps:
+      type: array of plan_step
+      required: true
+      min_items: 1
+      description: >
+        Ordered list of execution steps. Steps are executed
+        sequentially by default. Each step may reference the
+        output of previous steps.
+
+    estimated_tool_calls:
+      type: integer
+      required: true
+      description: >
+        The Interpreter's estimate of the total number of MCP
+        tool invocations this plan will make, accounting for
+        pagination and iteration. Used to give the user a sense
+        of the plan's scope before approval.
+
+    summary:
+      type: string
+      required: true
+      description: >
+        A human-readable explanation of what this plan will do,
+        written by the Interpreter. This is displayed to the
+        user during the approval step and stored in
+        queries.plan_summary in the data model. Should be clear
+        enough that a non-technical person can understand what
+        systems will be queried and what information will be
+        retrieved.
+
+# -----------------------------------------------------------------------------
+# Plan Step
+# -----------------------------------------------------------------------------
+
+plan_step:
+  description: >
+    A single step within a query plan. Each step invokes one
+    MCP tool with specific parameters and defines how to handle
+    the result.
+  fields:
+    step_id:
+      type: string
+      required: true
+      description: >
+        Unique identifier for this step within the plan. Used
+        to reference this step's output from subsequent steps.
+        Convention: "step_1", "step_2", etc.
+
+    tool_name:
+      type: string
+      required: true
+      description: >
+        The MCP tool to invoke. Must exactly match a tool_name
+        from the tool catalog provided to the Interpreter. The
+        Interpreter MUST NOT reference tools outside the catalog.
+        Example: "aws.iam_list_users".
+
+    integration_id:
+      type: string (UUID)
+      required: true
+      description: >
+        The integration to execute this tool against. Must match
+        an integration_id from the tool catalog. This determines
+        which credential set the Execution Engine uses.
+
+    parameters:
+      type: object
+      required: true
+      description: >
+        The parameters to pass to the MCP tool. Must conform to
+        the tool's input_schema as declared in its tool_definition.
+        Parameters may include references to previous steps'
+        output using the template syntax described below.
+
+    description:
+      type: string
+      required: true
+      description: >
+        A human-readable explanation of what this step does and
+        why. Shown to the user in the plan approval view.
+        Example: "Retrieve all IAM users from the Production AWS
+        account to identify accounts with console access."
+
+    output_alias:
+      type: string
+      required: true
+      description: >
+        A descriptive name for this step's output, used when
+        referencing it from subsequent steps. Convention:
+        snake_case noun phrase. Example: "all_iam_users",
+        "mfa_disabled_users".
+
+    transform:
+      type: object
+      required: false
+      description: >
+        An optional transformation to apply to the tool's raw
+        output before storing it as this step's result. Used
+        for filtering, field selection, or restructuring.
+      fields:
+        filter:
+          type: object
+          required: false
+          description: >
+            A filter expression to apply to array results.
+            Only items matching the filter are retained.
+          fields:
+            array_path:
+              type: string
+              description: >
+                Dot-path to the array within the tool's output
+                to filter. Example: "users".
+            condition:
+              type: object
+              description: >
+                The filter condition. Supports basic comparison
+                operators applied to item fields.
+              fields:
+                field:
+                  type: string
+                  description: >
+                    The field within each array item to test.
+                    Example: "mfa_enabled".
+                operator:
+                  type: string
+                  allowed_values:
+                    - equals
+                    - not_equals
+                    - greater_than
+                    - less_than
+                    - is_null
+                    - is_not_null
+                    - contains
+                    - not_contains
+                    - before
+                    - after
+                  description: The comparison operator.
+                value:
+                  type: any
+                  description: >
+                    The value to compare against. Ignored for
+                    is_null and is_not_null operators. For
+                    before/after operators, must be an ISO 8601
+                    datetime string or a relative expression
+                    like "-90d" (90 days ago).
+
+        select_fields:
+          type: array of string
+          required: false
+          description: >
+            If specified, only these fields are retained from
+            each item in the result. Dot notation supported
+            for nested fields. Example: ["username",
+            "mfa_enabled", "access_keys.last_used_at"].
+
+    depends_on:
+      type: array of string
+      required: false
+      description: >
+        List of step_ids that must complete before this step
+        can execute. If not specified, the step depends only on
+        the immediately preceding step (sequential execution).
+        Used for steps that combine data from multiple prior
+        steps.
+
+    iterate_over:
+      type: object
+      required: false
+      description: >
+        If specified, this step is executed once for each item
+        in a previous step's array output. Used when a tool
+        needs to be called per-item (e.g., checking branch
+        protection for each repository).
+      fields:
+        source_step:
+          type: string
+          description: >
+            The step_id whose output contains the array to
+            iterate over.
+        array_path:
+          type: string
+          description: >
+            Dot-path to the array within the source step's
+            output. Example: "repositories".
+        item_alias:
+          type: string
+          description: >
+            Name used to reference the current iteration item
+            in this step's parameters. Used with the template
+            syntax: "{{item.field_name}}".
+
+    paginate:
+      type: boolean
+      required: false
+      default: true
+      description: >
+        Whether the Execution Engine should automatically handle
+        pagination for this tool call, fetching all pages and
+        combining results. Default is true. Set to false if the
+        plan intentionally wants only the first page.
+
+# -----------------------------------------------------------------------------
+# Step Parameter Templates
+# -----------------------------------------------------------------------------
+# Parameters in a plan step may reference output from previous steps
+# using a template syntax. This enables multi-step queries where later
+# steps use data produced by earlier steps.
+#
+# Template syntax:
+#   "{{step_id.output_alias.dot.path}}"
+#
+# Examples:
+#   "{{step_1.all_iam_users.users}}"
+#     — The "users" array from step_1's output.
+#
+#   "{{step_2.mfa_disabled_users.users.length}}"
+#     — The count of users in step_2's filtered output.
+#
+#   "{{item.username}}"
+#     — When inside an iterate_over step, the username field
+#       of the current iteration item.
+#
+# The Execution Engine resolves all templates before invoking
+# the MCP tool. If a template references a step that has not
+# yet completed or a path that does not exist in the output,
+# the Execution Engine reports an error for that step.
+# -----------------------------------------------------------------------------
+
+# =============================================================================
+# 3. TOOL INVOCATION
+# =============================================================================
+# The request and response format for individual MCP tool calls made
+# by the Execution Engine. Conforms to the MCP protocol standard with
+# Tekmar-specific extensions for credential passing and metadata.
+# =============================================================================
+
+tool_invocation_request:
+  description: >
+    The payload the Execution Engine sends to an MCP server to
+    invoke a specific tool. Transported via the MCP protocol
+    (stdio transport in MVP).
+  fields:
+    tool_name:
+      type: string
+      required: true
+      description: >
+        The tool to invoke. Must match a tool_name declared by
+        the MCP server.
+
+    parameters:
+      type: object
+      required: true
+      description: >
+        The parameters for this invocation. Must conform to the
+        tool's input_schema. All template references have already
+        been resolved by the Execution Engine before this point.
+
+    credentials:
+      type: credential_envelope
+      required: true
+      description: >
+        The credentials to use when authenticating with the
+        external system's API. The MCP server uses these for the
+        duration of this single invocation and MUST NOT cache,
+        log, or persist them.
+
+    invocation_id:
+      type: string (UUID)
+      required: true
+      description: >
+        Unique identifier for this specific invocation. Generated
+        by the Execution Engine. Used to correlate the request
+        with its response in the transparency log.
+
+    timeout_seconds:
+      type: integer
+      required: false
+      default: 30
+      description: >
+        Maximum time in seconds the MCP server should spend on
+        this invocation before aborting. Does not include network
+        transit time.
+
+# -----------------------------------------------------------------------------
+# Credential Envelope
+# -----------------------------------------------------------------------------
+# The structure that carries credentials from the Execution Engine
+# to an MCP server. The internal structure varies by integration type.
+# -----------------------------------------------------------------------------
+
+credential_envelope:
+  description: >
+    Carries authentication credentials for a single MCP tool
+    invocation. The MCP server uses these to authenticate with
+    the external system's API. Structure varies by server_type.
+    Credentials exist in memory only for the duration of the
+    invocation and MUST NOT be cached, logged, or persisted
+    by the MCP server.
+  fields:
+    server_type:
+      type: string
+      required: true
+      description: >
+        Identifies the credential format. The MCP server uses
+        this to determine how to parse the credential_data field.
+
+    credential_mode:
+      type: string
+      required: true
+      allowed_values:
+        - broker
+        - direct
+      description: >
+        Indicates whether these are short-lived temporary
+        credentials generated by the Application API (broker
+        mode) or the original credentials passed through
+        directly (direct mode). MCP servers handle both modes
+        identically; this field exists for transparency logging.
+
+    credential_data:
+      type: object
+      required: true
+      description: >
+        The actual credential values. Structure varies by
+        server_type as defined below.
+
+# Credential data structures by server_type:
+
+credential_structures:
+  aws:
+    description: >
+      AWS credentials. In broker mode, these are temporary
+      credentials from AWS STS with a session token. In direct
+      mode, these are the stored access key and secret key.
+    fields:
+      access_key_id:
+        type: string
+        required: true
+      secret_access_key:
+        type: string
+        required: true
+      session_token:
+        type: string
+        required: false
+        description: >
+          Present only in broker mode. The temporary session
+          token from AWS STS. Its presence indicates the
+          credentials are time-limited.
+      region:
+        type: string
+        required: true
+        description: >
+          The AWS region to make API calls against.
+          Example: "us-east-1", "eu-west-1".
+
+  google_workspace:
+    description: >
+      Google Workspace credentials. Typically a service account
+      key that the MCP server uses to authenticate with
+      Google APIs.
+    fields:
+      service_account_json:
+        type: string
+        required: true
+        description: >
+          The full service account key JSON as a string. The
+          MCP server parses this to create an authenticated
+          API client.
+      delegated_email:
+        type: string
+        required: false
+        description: >
+          If domain-wide delegation is configured, this is the
+          email of the user to impersonate when making API calls.
+          Required for accessing user-level data in Google
+          Workspace.
+
+  github:
+    description: >
+      GitHub credentials. In the MVP, this is a Personal Access
+      Token (classic or fine-grained) with read-only scopes for
+      the target organization. Fine-grained tokens are preferred
+      because they allow precise scope control. GitHub does not
+      natively support short-lived derivative tokens from a PAT,
+      so this integration operates in direct transit mode only.
+      A future enhancement could support GitHub App installation
+      tokens, which are short-lived and would enable broker mode.
+    fields:
+      personal_access_token:
+        type: string
+        required: true
+        description: >
+          The GitHub Personal Access Token. Must have read-only
+          permissions for the target organization. Required scopes
+          for classic tokens: repo (read), read:org, admin:org
+          (read-only), read:audit_log. For fine-grained tokens:
+          Organization permissions for Members (read) and
+          Administration (read); Repository permissions for
+          Contents (read), Metadata (read), and Pull requests
+          (read).
+      organization:
+        type: string
+        required: true
+        description: >
+          The GitHub organization name (login) to query against.
+          Example: "my-company". All GitHub MCP tools scope their
+          queries to this organization.
+
+# -----------------------------------------------------------------------------
+# Tool Invocation Response
+# -----------------------------------------------------------------------------
+
+tool_invocation_response:
+  description: >
+    The payload an MCP server returns after executing a tool
+    invocation.
+  fields:
+    invocation_id:
+      type: string (UUID)
+      required: true
+      description: >
+        Echoes the invocation_id from the request. Used to
+        correlate request and response in the transparency log.
+
+    status:
+      type: string
+      required: true
+      allowed_values:
+        - success
+        - error
+        - partial
+      description: >
+        The outcome of the invocation. "success" means the tool
+        completed and returned data. "error" means the tool
+        failed entirely. "partial" means the tool returned some
+        data but could not complete fully (e.g., rate limited
+        mid-pagination).
+
+    data:
+      type: object
+      required: false
+      description: >
+        The tool's output data. Present when status is "success"
+        or "partial". Conforms to the tool's output_schema as
+        declared in its tool_definition. NULL or absent when
+        status is "error".
+
+    error:
+      type: object
+      required: false
+      description: >
+        Error information. Present when status is "error" or
+        "partial". NULL or absent when status is "success".
+      fields:
+        code:
+          type: string
+          required: true
+          description: >
+            A machine-readable error code. Follows a hierarchical
+            convention: "{category}.{specific_error}".
+          allowed_values_common:
+            - auth.invalid_credentials
+            - auth.expired_credentials
+            - auth.insufficient_permissions
+            - rate_limit.exceeded
+            - timeout.invocation_timeout
+            - external.api_error
+            - external.service_unavailable
+            - validation.invalid_parameters
+            - internal.server_error
+        message:
+          type: string
+          required: true
+          description: >
+            A human-readable error description. Safe to display
+            to the end user. Must not contain credential values
+            or sensitive system details.
+        details:
+          type: object
+          required: false
+          description: >
+            Additional structured error context. May include the
+            HTTP status code from the external API, the external
+            API's error response, and retry guidance.
+          fields:
+            external_status_code:
+              type: integer
+              required: false
+              description: HTTP status code from the external API.
+            external_error:
+              type: string
+              required: false
+              description: >
+                Error message from the external API. Must be
+                sanitized to remove any credential or token
+                values before inclusion.
+            retryable:
+              type: boolean
+              required: false
+              description: >
+                Whether the Execution Engine should retry this
+                invocation. True for transient errors (rate
+                limits, timeouts, temporary unavailability).
+                False for permanent errors (invalid credentials,
+                insufficient permissions).
+
+    metadata:
+      type: object
+      required: true
+      description: >
+        Execution metadata captured for the transparency log.
+        Always present regardless of status.
+      fields:
+        started_at:
+          type: string (ISO 8601 datetime)
+          required: true
+          description: When the MCP server began processing.
+        completed_at:
+          type: string (ISO 8601 datetime)
+          required: true
+          description: When the MCP server finished processing.
+        duration_ms:
+          type: integer
+          required: true
+          description: >
+            Wall-clock time in milliseconds from start to
+            completion.
+        external_api_calls:
+          type: integer
+          required: true
+          description: >
+            The number of API calls made to the external system
+            during this invocation. Includes pagination requests.
+        data_hash:
+          type: string
+          required: false
+          description: >
+            SHA-256 hash of the JSON-serialized data field.
+            Present when status is "success" or "partial".
+            Provides a verifiable fingerprint of the returned
+            data without requiring the full data to be stored
+            in the transparency log.
+
+# =============================================================================
+# 4. TRANSPARENCY LOG
+# =============================================================================
+# The complete execution record for a query. Produced by the Execution
+# Engine during query execution and returned to the Application API
+# as part of the query result. Stored as JSONB in queries.transparency_log
+# (see data-model.yaml).
+#
+# The transparency log exists so that users can independently verify
+# that the query results were produced by the operations the system
+# claims to have performed. Every MCP tool invocation is recorded.
+# =============================================================================
+
+transparency_log:
+  description: >
+    The complete, immutable record of everything that happened during
+    the execution of a query plan. One log per query execution.
+    Stored in queries.transparency_log in the data model.
+  fields:
+    query_id:
+      type: string (UUID)
+      required: true
+      description: >
+        The query this log belongs to. Matches queries.id in the
+        data model.
+
+    plan_id:
+      type: string (UUID)
+      required: true
+      description: >
+        The plan that was executed. Matches the plan_id in the
+        query plan that produced this execution.
+
+    execution_started_at:
+      type: string (ISO 8601 datetime)
+      required: true
+      description: When the Execution Engine began processing the plan.
+
+    execution_completed_at:
+      type: string (ISO 8601 datetime)
+      required: true
+      description: >
+        When the Execution Engine finished processing. Present
+        even if execution failed partway through.
+
+    total_duration_ms:
+      type: integer
+      required: true
+      description: >
+        Total wall-clock time for the entire execution in
+        milliseconds.
+
+    total_tool_invocations:
+      type: integer
+      required: true
+      description: >
+        Total number of MCP tool invocations made, including
+        pagination calls and retries.
+
+    total_external_api_calls:
+      type: integer
+      required: true
+      description: >
+        Total number of API calls made to external systems across
+        all tool invocations. Always greater than or equal to
+        total_tool_invocations because a single invocation may
+        make multiple API calls (pagination).
+
+    execution_status:
+      type: string
+      required: true
+      allowed_values:
+        - completed
+        - partial
+        - failed
+      description: >
+        The overall outcome of the execution. "completed" means all
+        steps succeeded. "partial" means some steps succeeded and
+        some failed. "failed" means the execution could not produce
+        any useful results.
+
+    entries:
+      type: array of transparency_log_entry
+      required: true
+      description: >
+        One entry per MCP tool invocation, in chronological order.
+        Includes retries as separate entries.
+
+transparency_log_entry:
+  description: >
+    A single record of an MCP tool invocation within a query
+    execution. Contains everything needed to independently verify
+    what the system did and what it received.
+  fields:
+    entry_id:
+      type: string (UUID)
+      required: true
+      description: Unique identifier for this log entry.
+
+    step_id:
+      type: string
+      required: true
+      description: >
+        The plan step that triggered this invocation. Matches
+        a step_id from the query plan.
+
+    invocation_id:
+      type: string (UUID)
+      required: true
+      description: >
+        The invocation_id sent to the MCP server. Correlates
+        this log entry with the actual tool call.
+
+    tool_name:
+      type: string
+      required: true
+      description: The MCP tool that was invoked.
+
+    integration_id:
+      type: string (UUID)
+      required: true
+      description: >
+        The integration the tool was executed against. Matches
+        an integrations.id from the data model.
+
+    parameters:
+      type: object
+      required: true
+      description: >
+        The resolved parameters passed to the tool. All template
+        references have been replaced with actual values. Sensitive
+        parameter values (if any) are redacted.
+
+    credential_mode:
+      type: string
+      required: true
+      allowed_values:
+        - broker
+        - direct
+      description: >
+        Whether broker or direct credential transit was used.
+        Recorded for security auditing. The actual credential
+        values are NEVER included in the transparency log.
+
+    status:
+      type: string
+      required: true
+      allowed_values:
+        - success
+        - error
+        - partial
+      description: >
+        The outcome of this specific invocation. Echoed from
+        the tool invocation response.
+
+    error_code:
+      type: string
+      required: false
+      description: >
+        The error code if status is "error" or "partial". Echoed
+        from the tool invocation response error.code field.
+
+    error_message:
+      type: string
+      required: false
+      description: >
+        The error message if status is "error" or "partial".
+
+    started_at:
+      type: string (ISO 8601 datetime)
+      required: true
+
+    completed_at:
+      type: string (ISO 8601 datetime)
+      required: true
+
+    duration_ms:
+      type: integer
+      required: true
+
+    external_api_calls:
+      type: integer
+      required: true
+      description: >
+        Number of external API calls made during this invocation.
+
+    data_hash:
+      type: string
+      required: false
+      description: >
+        SHA-256 hash of the data returned by this invocation.
+        Allows verification that the data used in the final
+        results matches what was actually returned by the
+        external system, without storing the full raw data
+        in the log. Present when status is "success" or "partial".
+
+    is_retry:
+      type: boolean
+      required: true
+      default: false
+      description: >
+        Whether this invocation was a retry of a previous failed
+        attempt for the same step.
+
+    retry_of:
+      type: string (UUID)
+      required: false
+      description: >
+        If is_retry is true, the entry_id of the original failed
+        invocation that this is retrying.
+
+# =============================================================================
+# MVP TOOL INVENTORY
+# =============================================================================
+# The following is a reference list of the specific MCP tools that will
+# be implemented for the MVP. Each tool listed here will have a full
+# tool_definition in its respective MCP server. This list exists in the
+# specification for planning purposes and to scope the MVP.
+# =============================================================================
+
+mvp_tool_inventory:
+  description: >
+    Reference list of tools to be implemented for the MVP. These
+    are the specific operations the Interpreter can use to answer
+    queries. The tools are grouped by MCP server.
+
+  aws:
+    server_type: aws
+    tools:
+      - tool_name: aws.iam_list_users
+        description: >
+          List all IAM users with their metadata, policies, MFA
+          status, and access key information.
+        category: identity
+
+      - tool_name: aws.iam_list_roles
+        description: >
+          List all IAM roles with their trust policies and
+          attached permission policies.
+        category: access_management
+
+      - tool_name: aws.iam_get_account_summary
+        description: >
+          Retrieve IAM account-level summary including counts
+          of users, roles, policies, and MFA device usage.
+        category: identity
+
+      - tool_name: aws.cloudtrail_lookup_events
+        description: >
+          Search CloudTrail events by time range, event type,
+          resource, or user identity. Returns management events
+          and optionally data events.
+        category: audit_log
+
+      - tool_name: aws.s3_list_buckets
+        description: >
+          List all S3 buckets with their creation dates and
+          regions.
+        category: storage
+
+      - tool_name: aws.s3_get_bucket_security
+        description: >
+          Retrieve security configuration for a specific S3
+          bucket: public access block, bucket policy, encryption
+          settings, versioning status, and logging configuration.
+        category: configuration
+
+      - tool_name: aws.ec2_describe_security_groups
+        description: >
+          List security groups with their inbound and outbound
+          rules. Used for network access review.
+        category: network
+
+  google_workspace:
+    server_type: google_workspace
+    tools:
+      - tool_name: google_workspace.list_users
+        description: >
+          List all users in the Google Workspace directory with
+          their profile information, organizational unit, and
+          account status.
+        category: identity
+
+      - tool_name: google_workspace.get_user_mfa_status
+        description: >
+          Retrieve MFA enrollment and enforcement status for
+          users. Indicates whether 2-step verification is
+          enrolled, enforced, or disabled.
+        category: access_management
+
+      - tool_name: google_workspace.list_user_tokens
+        description: >
+          List OAuth tokens and application-specific passwords
+          granted by a user. Used for access review of third-party
+          application permissions.
+        category: access_management
+
+      - tool_name: google_workspace.list_login_events
+        description: >
+          Retrieve login activity events from the Google Workspace
+          Admin Reports API. Includes successful logins, failed
+          attempts, and suspicious activity flags.
+        category: audit_log
+
+  github:
+    server_type: github
+    tools:
+      - tool_name: github.list_organization_members
+        description: >
+          List all members of the GitHub organization with their
+          role (owner or member), two-factor authentication status,
+          and account metadata. Used for access reviews and to
+          identify organization administrators.
+        category: identity
+
+      - tool_name: github.list_repositories
+        description: >
+          List all repositories in the organization with their
+          visibility (public, private, internal), default branch,
+          creation date, last push date, and language. Used to
+          identify public repositories, inactive repositories,
+          and to scope subsequent per-repository queries.
+        category: configuration
+
+      - tool_name: github.get_branch_protection
+        description: >
+          Retrieve branch protection rules for a specific branch
+          of a repository. Returns whether protection is enabled,
+          required review count, required status checks, enforce
+          admins flag, and restrictions. Used for configuration
+          compliance checks.
+        category: configuration
+
+      - tool_name: github.list_pull_requests
+        description: >
+          List pull requests for a repository, filterable by state
+          (open, closed, merged) and date range. Returns PR title,
+          author, reviewers, merge timestamp, and target branch.
+          Used for change management audit evidence.
+        category: audit_log
+
+      - tool_name: github.list_repository_collaborators
+        description: >
+          List all collaborators (users with direct access) on a
+          specific repository with their permission level (admin,
+          write, read). Used for per-repository access reviews.
+        category: access_management

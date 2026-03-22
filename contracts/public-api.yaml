@@ -1,0 +1,1656 @@
+# Tekmar Public API Specification
+# Boundary 1: Interface Layer (tekmar-interface) ↔ Application API (tekmar-api)
+#
+# Version: 1.0.0 (MVP)
+# Status: Active
+# Last updated: 2026-03-19
+#
+# This specification defines every HTTP endpoint that the Interface Layer
+# uses to communicate with the Application API. All endpoints are served
+# over HTTPS in production and HTTP in development.
+#
+# Design principles:
+#   - Every endpoint enforces organization-scoped data isolation. A user
+#     can never access data belonging to another organization.
+#   - Endpoints that modify organizational resources (integrations, users,
+#     settings) require the "admin" role. Query and read operations are
+#     available to both "admin" and "member" roles.
+#   - Authentication uses JWT access tokens (short-lived, stateless) and
+#     refresh tokens (long-lived, stored in database, revocable).
+#   - All request and response bodies are JSON.
+#   - All timestamps in responses are ISO 8601 UTC strings.
+#   - All IDs are UUID v4 strings.
+#   - Pagination uses cursor-based pagination for list endpoints.
+#   - Field names use snake_case consistently.
+#
+# Query lifecycle communication:
+#   The query submission and execution flow uses a combination of HTTP
+#   endpoints (for discrete actions) and WebSocket (for real-time status
+#   updates). When a user submits a query via POST /queries, the endpoint
+#   returns immediately. Both interpretation and execution stream events
+#   to the Interface Layer via WebSocket. During interpretation, the user
+#   watches the AI's analysis appear in real time, token by token, like a
+#   chat message being typed. During execution, the user watches each tool
+#   invocation start, complete, or fail — like a CI/CD pipeline running.
+#   GET /queries/:id remains available for fetching a query's current state
+#   on demand (e.g., when navigating back to a previously completed query),
+#   but real-time lifecycle tracking uses the WebSocket channel exclusively.
+#
+# Cross-references:
+#   - data-model.yaml: defines entity structures that response shapes
+#     are derived from (organizations, users, integrations, queries,
+#     invitations, activity_logs).
+#   - internal-api.yaml: defines the result_data, result_table, and
+#     result_column schemas that query results conform to. These
+#     structures pass through the public API unchanged.
+#   - mcp-tool-interface.yaml: defines the query_plan schema displayed
+#     to users during the approval step, and the transparency_log
+#     schema displayed in query detail views.
+
+spec_version: "1.0.0"
+
+base_url: "/api/v1"
+
+# =============================================================================
+# COMMON DEFINITIONS
+# =============================================================================
+
+common:
+
+  # ---------------------------------------------------------------------------
+  # Authentication
+  # ---------------------------------------------------------------------------
+  authentication:
+    description: >
+      All endpoints except /auth/register, /auth/login, /auth/refresh,
+      and /invitations/accept require a valid JWT access token in the
+      Authorization header. The WebSocket connection also requires
+      authentication (see websocket_protocol section).
+    header:
+      name: Authorization
+      format: "Bearer <access_token>"
+    access_token:
+      type: JWT
+      lifetime_minutes: 15
+      payload_fields:
+        user_id: string (UUID)
+        organization_id: string (UUID)
+        role: string (admin | member)
+        user_class: string (customer | internal_operator)
+      storage: >
+        In-memory only. The access token is held in a JavaScript
+        variable in the Angular application's runtime state. It is
+        NOT stored in localStorage, sessionStorage, or cookies.
+        When the user refreshes the page or opens a new tab, the
+        access token is lost and must be re-obtained via the
+        refresh token (silent refresh). This prevents XSS attacks
+        from stealing the access token from persistent storage.
+      description: >
+        Short-lived stateless token. The Application API validates
+        the signature and expiration without a database lookup.
+        The organization_id and role in the token payload are used
+        for authorization decisions on every request.
+    refresh_token:
+      type: opaque string
+      lifetime_days: 30
+      storage: >
+        Server-side: stored as a SHA-256 hash in the refresh_tokens
+        table (see data-model.yaml).
+        Client-side: delivered and stored as an HTTP-only, Secure,
+        SameSite=Strict cookie. The cookie is set by the Application
+        API in the Set-Cookie response header on login, registration,
+        invitation acceptance, and token refresh. The browser sends
+        it automatically with requests to /auth/refresh and
+        /auth/logout. JavaScript cannot access this cookie (HTTP-only),
+        which makes it immune to XSS theft.
+      cookie_settings:
+        name: "tekmar_refresh_token"
+        HttpOnly: true
+        Secure: true
+        SameSite: Strict
+        Path: "/api/v1/auth"
+        Max-Age: 2592000  # 30 days in seconds
+
+  # ---------------------------------------------------------------------------
+  # Error Response Format
+  # ---------------------------------------------------------------------------
+  error_response:
+    description: >
+      Standard error format used by all endpoints.
+    content_type: "application/json"
+    fields:
+      error:
+        type: object
+        required: true
+        fields:
+          code:
+            type: string
+            required: true
+            description: >
+              Machine-readable error code. Format: "{category}.{detail}".
+          message:
+            type: string
+            required: true
+            description: >
+              Human-readable error description. Safe to display to
+              the user in the Interface Layer.
+          field:
+            type: string
+            required: false
+            description: >
+              For validation errors, the specific field that failed
+              validation.
+
+    common_errors:
+      - status: 401
+        code: auth.token_expired
+        message: "Access token has expired. Use refresh token to obtain a new one."
+      - status: 401
+        code: auth.token_invalid
+        message: "Access token is invalid or malformed."
+      - status: 401
+        code: auth.not_authenticated
+        message: "Authentication required."
+      - status: 403
+        code: auth.insufficient_role
+        message: "This action requires the admin role."
+      - status: 404
+        code: resource.not_found
+        message: "The requested resource does not exist."
+      - status: 422
+        code: validation.invalid_field
+        message: "One or more fields failed validation."
+      - status: 429
+        code: rate_limit.exceeded
+        message: "Too many requests. Try again later."
+      - status: 500
+        code: system.internal_error
+        message: "An unexpected error occurred."
+
+  # ---------------------------------------------------------------------------
+  # Pagination
+  # ---------------------------------------------------------------------------
+  pagination:
+    description: >
+      List endpoints use cursor-based pagination. The response includes
+      a "pagination" object with a "next_cursor" field. To fetch the
+      next page, pass this cursor as the "cursor" query parameter.
+    query_parameters:
+      limit:
+        type: integer
+        default: 20
+        min: 1
+        max: 100
+        description: Number of items per page.
+      cursor:
+        type: string
+        required: false
+        description: >
+          Opaque pagination cursor from a previous response's
+          pagination.next_cursor field. Omit for the first page.
+    response_fields:
+      pagination:
+        type: object
+        fields:
+          next_cursor:
+            type: string
+            nullable: true
+            description: >
+              Cursor for the next page. NULL if there are no more
+              results.
+          has_more:
+            type: boolean
+            description: Whether more results exist beyond this page.
+          total_count:
+            type: integer
+            description: >
+              Total number of items matching the query (across all
+              pages). May be approximate for large datasets.
+
+# =============================================================================
+# ENDPOINTS: AUTHENTICATION
+# =============================================================================
+
+endpoints:
+
+  # ---------------------------------------------------------------------------
+  # POST /auth/register
+  # ---------------------------------------------------------------------------
+  auth_register:
+    method: POST
+    path: /auth/register
+    authentication: none
+    description: >
+      Create a new organization and its founding admin user. This is
+      the entry point for new customers. The user who registers becomes
+      the first admin of a new organization.
+    request:
+      fields:
+        organization_name:
+          type: string
+          required: true
+          min_length: 2
+          max_length: 255
+          description: Display name for the new organization.
+        email:
+          type: string
+          required: true
+          format: email
+          max_length: 320
+          description: >
+            Email address for the founding admin. Must be unique
+            across the entire system (a person cannot belong to
+            multiple organizations).
+        password:
+          type: string
+          required: true
+          min_length: 8
+          max_length: 128
+          description: >
+            Password for the new account. Minimum 8 characters.
+            Stored as a bcrypt hash, never in plain text.
+        display_name:
+          type: string
+          required: true
+          min_length: 1
+          max_length: 255
+          description: The user's display name.
+    response:
+      status: 201
+      set_cookie: "tekmar_refresh_token (see authentication.refresh_token.cookie_settings)"
+      fields:
+        user:
+          type: user_response
+        organization:
+          type: organization_response
+        access_token:
+          type: string
+          description: >
+            JWT access token for immediate use. Stored in-memory
+            by the Interface Layer, never in persistent storage.
+      notes: >
+        The refresh token is NOT included in the response body.
+        It is delivered via the Set-Cookie header as an HTTP-only
+        cookie. The Interface Layer does not need to read or
+        store it; the browser handles it automatically.
+    errors:
+      - status: 409
+        code: auth.email_exists
+        message: "An account with this email already exists."
+      - status: 422
+        code: validation.invalid_field
+    activity_log: user_registered
+
+  # ---------------------------------------------------------------------------
+  # POST /auth/login
+  # ---------------------------------------------------------------------------
+  auth_login:
+    method: POST
+    path: /auth/login
+    authentication: none
+    description: >
+      Authenticate with email and password. Returns access token in
+      the response body and sets refresh token as an HTTP-only cookie.
+      Updates last_login_at on the user record.
+    request:
+      fields:
+        email:
+          type: string
+          required: true
+          format: email
+        password:
+          type: string
+          required: true
+    response:
+      status: 200
+      set_cookie: "tekmar_refresh_token (see authentication.refresh_token.cookie_settings)"
+      fields:
+        user:
+          type: user_response
+        organization:
+          type: organization_response
+        access_token:
+          type: string
+    errors:
+      - status: 401
+        code: auth.invalid_credentials
+        message: "Invalid email or password."
+      - status: 403
+        code: auth.account_disabled
+        message: "This account has been disabled."
+    activity_log: user_login
+
+  # ---------------------------------------------------------------------------
+  # POST /auth/refresh
+  # ---------------------------------------------------------------------------
+  auth_refresh:
+    method: POST
+    path: /auth/refresh
+    authentication: none
+    description: >
+      Exchange a valid refresh token for a new access token and a
+      new refresh token. The old refresh token is revoked. This
+      is the standard token rotation pattern. The refresh token
+      is read from the HTTP-only cookie (sent automatically by the
+      browser), not from the request body. This is also used for
+      "silent refresh" on page load: the Interface Layer calls this
+      endpoint on startup to obtain a fresh access token from the
+      cookie.
+    request:
+      fields: null
+      notes: >
+        No request body is needed. The refresh token is read from
+        the tekmar_refresh_token cookie, which the browser sends
+        automatically with requests to /api/v1/auth/*.
+    response:
+      status: 200
+      set_cookie: "tekmar_refresh_token (new token replaces the old one)"
+      fields:
+        access_token:
+          type: string
+          description: >
+            New JWT access token. The Interface Layer stores this
+            in memory and uses it for subsequent API requests.
+    errors:
+      - status: 401
+        code: auth.refresh_token_invalid
+        message: "Refresh token is invalid, expired, or revoked."
+
+  # ---------------------------------------------------------------------------
+  # POST /auth/logout
+  # ---------------------------------------------------------------------------
+  auth_logout:
+    method: POST
+    path: /auth/logout
+    authentication: required
+    description: >
+      Revoke the current refresh token, effectively ending the
+      session. The refresh token is read from the HTTP-only cookie.
+      The Application API also clears the cookie in the response.
+      The access token remains valid until it expires (max 15
+      minutes), but the refresh token can no longer be used to
+      obtain new access tokens.
+    request:
+      fields: null
+      notes: >
+        No request body is needed. The refresh token is read from
+        the tekmar_refresh_token cookie.
+    response:
+      status: 204
+      set_cookie: "tekmar_refresh_token cleared (Max-Age=0)"
+      fields: null
+
+  # ===========================================================================
+  # ENDPOINTS: ORGANIZATION
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # GET /organization
+  # ---------------------------------------------------------------------------
+  organization_get:
+    method: GET
+    path: /organization
+    authentication: required
+    roles: [admin, member]
+    description: >
+      Retrieve the current user's organization details. The
+      organization is determined from the access token's
+      organization_id claim. There is no organization ID in the
+      URL because a user belongs to exactly one organization.
+    request:
+      fields: null
+    response:
+      status: 200
+      fields:
+        organization:
+          type: organization_response
+
+  # ---------------------------------------------------------------------------
+  # PATCH /organization
+  # ---------------------------------------------------------------------------
+  organization_update:
+    method: PATCH
+    path: /organization
+    authentication: required
+    roles: [admin]
+    description: >
+      Update organization settings. Only the fields included in
+      the request body are updated; omitted fields are unchanged.
+    request:
+      fields:
+        name:
+          type: string
+          required: false
+          min_length: 2
+          max_length: 255
+          description: Updated organization display name.
+    response:
+      status: 200
+      fields:
+        organization:
+          type: organization_response
+    errors:
+      - status: 403
+        code: auth.insufficient_role
+    activity_log: organization_updated
+
+  # ===========================================================================
+  # ENDPOINTS: USERS
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # GET /users
+  # ---------------------------------------------------------------------------
+  users_list:
+    method: GET
+    path: /users
+    authentication: required
+    roles: [admin, member]
+    description: >
+      List all users in the current organization. Both admins and
+      members can view the user list.
+    request:
+      query_parameters:
+        role:
+          type: string
+          required: false
+          allowed_values: [admin, member]
+          description: Filter by role.
+        status:
+          type: string
+          required: false
+          allowed_values: [active, disabled]
+          description: Filter by account status.
+        limit:
+          type: integer
+          required: false
+          default: 20
+        cursor:
+          type: string
+          required: false
+    response:
+      status: 200
+      fields:
+        users:
+          type: array of user_response
+        pagination:
+          type: pagination_response
+
+  # ---------------------------------------------------------------------------
+  # POST /users/invite
+  # ---------------------------------------------------------------------------
+  users_invite:
+    method: POST
+    path: /users/invite
+    authentication: required
+    roles: [admin]
+    description: >
+      Invite a new user to the organization. Creates an invitation
+      record with a unique token. The invitation link is sent to
+      the provided email address. The user record is not created
+      until the invitation is accepted.
+    request:
+      fields:
+        email:
+          type: string
+          required: true
+          format: email
+          max_length: 320
+          description: >
+            Email address of the person to invite. Must not
+            already be registered in the system.
+        role:
+          type: string
+          required: false
+          default: "member"
+          allowed_values: [admin, member]
+          description: The role the invited user will have.
+    response:
+      status: 201
+      fields:
+        invitation:
+          type: invitation_response
+    errors:
+      - status: 409
+        code: users.email_exists
+        message: "A user with this email already exists."
+      - status: 409
+        code: users.invitation_pending
+        message: "A pending invitation already exists for this email."
+      - status: 403
+        code: auth.insufficient_role
+    activity_log: user_invited
+
+  # ---------------------------------------------------------------------------
+  # POST /invitations/accept
+  # ---------------------------------------------------------------------------
+  invitations_accept:
+    method: POST
+    path: /invitations/accept
+    authentication: none
+    description: >
+      Accept an invitation and create a user account. No
+      authentication required because the invitation token serves
+      as proof of authorization. The user record is created in the
+      organization specified by the invitation.
+    request:
+      fields:
+        token:
+          type: string
+          required: true
+          description: >
+            The invitation token from the invitation link.
+        password:
+          type: string
+          required: true
+          min_length: 8
+          max_length: 128
+          description: Password for the new account.
+        display_name:
+          type: string
+          required: true
+          min_length: 1
+          max_length: 255
+    response:
+      status: 201
+      set_cookie: "tekmar_refresh_token (see authentication.refresh_token.cookie_settings)"
+      fields:
+        user:
+          type: user_response
+        organization:
+          type: organization_response
+        access_token:
+          type: string
+          description: >
+            JWT access token for immediate use. Stored in-memory
+            by the Interface Layer.
+    errors:
+      - status: 400
+        code: invitations.token_invalid
+        message: "Invitation token is invalid."
+      - status: 410
+        code: invitations.expired
+        message: "This invitation has expired."
+      - status: 410
+        code: invitations.already_accepted
+        message: "This invitation has already been accepted."
+
+  # ---------------------------------------------------------------------------
+  # GET /invitations
+  # ---------------------------------------------------------------------------
+  invitations_list:
+    method: GET
+    path: /invitations
+    authentication: required
+    roles: [admin]
+    description: >
+      List pending invitations for the current organization.
+    request:
+      query_parameters:
+        status:
+          type: string
+          required: false
+          default: "pending"
+          allowed_values: [pending, accepted, expired, revoked]
+        limit:
+          type: integer
+          required: false
+          default: 20
+        cursor:
+          type: string
+          required: false
+    response:
+      status: 200
+      fields:
+        invitations:
+          type: array of invitation_response
+        pagination:
+          type: pagination_response
+
+  # ---------------------------------------------------------------------------
+  # POST /invitations/:id/revoke
+  # ---------------------------------------------------------------------------
+  invitations_revoke:
+    method: POST
+    path: "/invitations/{invitation_id}/revoke"
+    authentication: required
+    roles: [admin]
+    description: >
+      Revoke a pending invitation. The invitation can no longer
+      be accepted.
+    request:
+      path_parameters:
+        invitation_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 200
+      fields:
+        invitation:
+          type: invitation_response
+    errors:
+      - status: 400
+        code: invitations.not_pending
+        message: "Only pending invitations can be revoked."
+      - status: 404
+        code: resource.not_found
+
+  # ---------------------------------------------------------------------------
+  # DELETE /users/:id
+  # ---------------------------------------------------------------------------
+  users_remove:
+    method: DELETE
+    path: "/users/{user_id}"
+    authentication: required
+    roles: [admin]
+    description: >
+      Remove a user from the organization. Revokes all their
+      refresh tokens. The user cannot remove themselves. The
+      last admin of an organization cannot be removed.
+    request:
+      path_parameters:
+        user_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 204
+      fields: null
+    errors:
+      - status: 400
+        code: users.cannot_remove_self
+        message: "You cannot remove your own account."
+      - status: 400
+        code: users.last_admin
+        message: "Cannot remove the last admin of the organization."
+      - status: 404
+        code: resource.not_found
+    activity_log: user_removed
+
+  # ---------------------------------------------------------------------------
+  # PATCH /users/:id/role
+  # ---------------------------------------------------------------------------
+  users_change_role:
+    method: PATCH
+    path: "/users/{user_id}/role"
+    authentication: required
+    roles: [admin]
+    description: >
+      Change a user's role within the organization. An admin
+      cannot demote themselves if they are the last admin.
+    request:
+      path_parameters:
+        user_id:
+          type: string (UUID)
+      fields:
+        role:
+          type: string
+          required: true
+          allowed_values: [admin, member]
+    response:
+      status: 200
+      fields:
+        user:
+          type: user_response
+    errors:
+      - status: 400
+        code: users.last_admin
+        message: "Cannot change role of the last admin."
+      - status: 404
+        code: resource.not_found
+    activity_log: user_role_changed
+
+  # ===========================================================================
+  # ENDPOINTS: INTEGRATIONS
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # GET /integrations
+  # ---------------------------------------------------------------------------
+  integrations_list:
+    method: GET
+    path: /integrations
+    authentication: required
+    roles: [admin, member]
+    description: >
+      List all integrations for the current organization. Both
+      admins and members can view integrations. Credentials are
+      never included in the response.
+    request:
+      query_parameters:
+        type:
+          type: string
+          required: false
+          allowed_values: [aws, google_workspace, github]
+          description: Filter by integration type.
+        status:
+          type: string
+          required: false
+          allowed_values: [active, inactive, error]
+        limit:
+          type: integer
+          required: false
+          default: 20
+        cursor:
+          type: string
+          required: false
+    response:
+      status: 200
+      fields:
+        integrations:
+          type: array of integration_response
+        pagination:
+          type: pagination_response
+
+  # ---------------------------------------------------------------------------
+  # POST /integrations
+  # ---------------------------------------------------------------------------
+  integrations_connect:
+    method: POST
+    path: /integrations
+    authentication: required
+    roles: [admin]
+    description: >
+      Connect a new integration. The Application API validates the
+      credential format, encrypts the credentials, tests the
+      connection by invoking a lightweight health-check tool on the
+      MCP server, and creates the integration record.
+    request:
+      fields:
+        type:
+          type: string
+          required: true
+          allowed_values: [aws, google_workspace, github]
+          description: >
+            The external system to connect. Must match a registered
+            MCP server type (see mcp-tool-interface.yaml).
+        display_name:
+          type: string
+          required: true
+          min_length: 1
+          max_length: 255
+          description: >
+            Human-readable name for this integration. Example:
+            "Production AWS", "Corporate Google Workspace".
+        credentials:
+          type: object
+          required: true
+          description: >
+            The credentials for authenticating with the external
+            system. Structure varies by integration type:
+            - aws: { access_key_id, secret_access_key, region }
+            - google_workspace: { service_account_json, delegated_email? }
+            - github: { personal_access_token, organization }
+            Credential field names and types match the
+            credential_structures section of mcp-tool-interface.yaml.
+    response:
+      status: 201
+      fields:
+        integration:
+          type: integration_response
+    errors:
+      - status: 400
+        code: integrations.invalid_credentials_format
+        message: "Credential format does not match the integration type."
+      - status: 400
+        code: integrations.connection_failed
+        message: "Could not connect with the provided credentials."
+        description: >
+          The health-check call to the MCP server failed. The
+          credentials may be invalid, expired, or have insufficient
+          permissions.
+      - status: 403
+        code: auth.insufficient_role
+    activity_log: integration_connected
+
+  # ---------------------------------------------------------------------------
+  # DELETE /integrations/:id
+  # ---------------------------------------------------------------------------
+  integrations_disconnect:
+    method: DELETE
+    path: "/integrations/{integration_id}"
+    authentication: required
+    roles: [admin]
+    description: >
+      Disconnect an integration. Deletes the integration record
+      and its encrypted credentials. Queries that previously used
+      this integration retain their results and history; only the
+      ability to run new queries against this integration is removed.
+    request:
+      path_parameters:
+        integration_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 204
+      fields: null
+    errors:
+      - status: 404
+        code: resource.not_found
+      - status: 403
+        code: auth.insufficient_role
+    activity_log: integration_disconnected
+
+  # ---------------------------------------------------------------------------
+  # POST /integrations/:id/test
+  # ---------------------------------------------------------------------------
+  integrations_test:
+    method: POST
+    path: "/integrations/{integration_id}/test"
+    authentication: required
+    roles: [admin]
+    description: >
+      Test an existing integration's connection health. Decrypts
+      the stored credentials, invokes a lightweight health-check
+      on the MCP server, and updates the integration's health
+      check fields.
+    request:
+      path_parameters:
+        integration_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 200
+      fields:
+        integration:
+          type: integration_response
+          description: >
+            The updated integration with last_health_check_at and
+            last_health_check_status refreshed.
+    errors:
+      - status: 404
+        code: resource.not_found
+      - status: 403
+        code: auth.insufficient_role
+    activity_log: integration_health_checked
+
+  # ===========================================================================
+  # ENDPOINTS: QUERIES
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # POST /queries
+  # ---------------------------------------------------------------------------
+  queries_submit:
+    method: POST
+    path: /queries
+    authentication: required
+    roles: [admin, member]
+    description: >
+      Submit a new query. Creates a query record in "interpreting"
+      status and returns immediately. The Application API processes
+      interpretation in the background. Real-time status updates
+      (interpretation progress, plan delivery) are streamed to the
+      Interface Layer via the WebSocket connection.
+    request:
+      fields:
+        query_text:
+          type: string
+          required: true
+          min_length: 3
+          max_length: 10000
+          description: >
+            The natural language question. Example: "Show me all
+            IAM users with console access who have not logged in
+            within 90 days."
+        integration_ids:
+          type: array of string (UUID)
+          required: false
+          description: >
+            Specific integrations to include in the query scope.
+            If omitted, all active integrations in the organization
+            are included. Each ID must reference an active
+            integration belonging to the user's organization.
+    response:
+      status: 201
+      fields:
+        query:
+          type: query_response
+          description: >
+            The newly created query record with status "interpreting".
+            The query_plan, result_data, and transparency_log fields
+            will be null at this point.
+    errors:
+      - status: 400
+        code: queries.no_integrations
+        message: "No active integrations available for this query."
+        description: >
+          Either the specified integration_ids are invalid or the
+          organization has no active integrations.
+      - status: 422
+        code: validation.invalid_field
+    activity_log: query_submitted
+
+  # ---------------------------------------------------------------------------
+  # GET /queries/:id
+  # ---------------------------------------------------------------------------
+  queries_get:
+    method: GET
+    path: "/queries/{query_id}"
+    authentication: required
+    roles: [admin, member]
+    description: >
+      Retrieve a single query with its current state. Used when
+      navigating to a previously completed query or when the
+      Interface Layer needs the full query detail on demand.
+      Real-time lifecycle tracking during active queries uses
+      the WebSocket connection, not this endpoint.
+    request:
+      path_parameters:
+        query_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 200
+      fields:
+        query:
+          type: query_detail_response
+          description: >
+            Full query details including plan, results, and
+            transparency log (when available based on status).
+    errors:
+      - status: 404
+        code: resource.not_found
+
+  # ---------------------------------------------------------------------------
+  # POST /queries/:id/approve
+  # ---------------------------------------------------------------------------
+  queries_approve:
+    method: POST
+    path: "/queries/{query_id}/approve"
+    authentication: required
+    roles: [admin, member]
+    description: >
+      Approve a query plan for execution. The query must be in
+      "awaiting_approval" status. Sets status to "approved", then
+      the Application API begins execution in the background.
+      Real-time execution progress (tool invocations starting,
+      completing, failing) is streamed to the Interface Layer
+      via the WebSocket connection.
+    request:
+      path_parameters:
+        query_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 200
+      fields:
+        query:
+          type: query_response
+          description: >
+            The query with status updated to "approved". The status
+            will transition to "executing" shortly as the Application
+            API begins execution in the background.
+    errors:
+      - status: 400
+        code: queries.invalid_status_transition
+        message: "Query is not awaiting approval."
+      - status: 404
+        code: resource.not_found
+    activity_log: query_plan_approved
+
+  # ---------------------------------------------------------------------------
+  # POST /queries/:id/reject
+  # ---------------------------------------------------------------------------
+  queries_reject:
+    method: POST
+    path: "/queries/{query_id}/reject"
+    authentication: required
+    roles: [admin, member]
+    description: >
+      Reject a query plan. The query must be in "awaiting_approval"
+      status. Sets status to "rejected". No execution occurs.
+    request:
+      path_parameters:
+        query_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 200
+      fields:
+        query:
+          type: query_response
+    errors:
+      - status: 400
+        code: queries.invalid_status_transition
+        message: "Query is not awaiting approval."
+      - status: 404
+        code: resource.not_found
+    activity_log: query_plan_rejected
+
+  # ---------------------------------------------------------------------------
+  # GET /queries
+  # ---------------------------------------------------------------------------
+  queries_list:
+    method: GET
+    path: /queries
+    authentication: required
+    roles: [admin, member]
+    description: >
+      List queries for the current organization, ordered by
+      submission time (most recent first).
+    request:
+      query_parameters:
+        status:
+          type: string
+          required: false
+          allowed_values:
+            - interpreting
+            - awaiting_approval
+            - approved
+            - executing
+            - completed
+            - failed
+            - rejected
+          description: Filter by query status.
+        initiated_by:
+          type: string (UUID)
+          required: false
+          description: >
+            Filter to queries submitted by a specific user.
+        limit:
+          type: integer
+          required: false
+          default: 20
+        cursor:
+          type: string
+          required: false
+    response:
+      status: 200
+      fields:
+        queries:
+          type: array of query_response
+          description: >
+            List of queries. This is the summary representation,
+            not the full detail. query_plan, result_data, and
+            transparency_log are excluded from list responses
+            for performance. Use GET /queries/:id for full detail.
+        pagination:
+          type: pagination_response
+
+  # ---------------------------------------------------------------------------
+  # GET /queries/:id/export/csv
+  # ---------------------------------------------------------------------------
+  queries_export_csv:
+    method: GET
+    path: "/queries/{query_id}/export/csv"
+    authentication: required
+    roles: [admin, member]
+    description: >
+      Download query results as a CSV file. The query must be in
+      "completed" status. If the export file has already been
+      generated and stored, returns a redirect to the file URL.
+      If not yet generated, generates it on demand.
+    request:
+      path_parameters:
+        query_id:
+          type: string (UUID)
+      fields: null
+    response:
+      status: 200
+      content_type: "text/csv"
+      headers:
+        Content-Disposition: 'attachment; filename="tekmar-query-{query_id}.csv"'
+      description: >
+        The CSV file content. Columns correspond to the result_data
+        tables' column definitions. If results contain multiple
+        tables, they are concatenated with a blank row and table
+        title between them.
+    errors:
+      - status: 400
+        code: queries.not_completed
+        message: "Query results are not yet available."
+      - status: 404
+        code: resource.not_found
+
+  # ===========================================================================
+  # ENDPOINTS: ACTIVITY LOGS
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # GET /activity-logs
+  # ---------------------------------------------------------------------------
+  activity_logs_list:
+    method: GET
+    path: /activity-logs
+    authentication: required
+    roles: [admin]
+    description: >
+      List activity log entries for the current organization.
+      Admin only. Ordered by creation time (most recent first).
+    request:
+      query_parameters:
+        action:
+          type: string
+          required: false
+          allowed_values:
+            - user_registered
+            - user_login
+            - user_invited
+            - user_removed
+            - user_role_changed
+            - integration_connected
+            - integration_disconnected
+            - integration_health_checked
+            - query_submitted
+            - query_plan_approved
+            - query_plan_rejected
+            - organization_updated
+          description: Filter by action type.
+        user_id:
+          type: string (UUID)
+          required: false
+          description: Filter to actions performed by a specific user.
+        limit:
+          type: integer
+          required: false
+          default: 50
+        cursor:
+          type: string
+          required: false
+    response:
+      status: 200
+      fields:
+        activity_logs:
+          type: array of activity_log_response
+        pagination:
+          type: pagination_response
+
+# =============================================================================
+# WEBSOCKET PROTOCOL
+# =============================================================================
+# The Interface Layer maintains a persistent WebSocket connection to the
+# Application API for real-time query lifecycle updates. This connection
+# supplements the HTTP endpoints; it does not replace them. Discrete
+# actions (submit, approve, reject) use HTTP. Continuous status updates
+# during interpretation and execution use the WebSocket.
+# =============================================================================
+
+websocket:
+  path: /api/v1/ws
+  authentication: >
+    The WebSocket connection is authenticated on the initial HTTP
+    upgrade request. The Interface Layer includes the JWT access
+    token as a query parameter: /api/v1/ws?token=<access_token>.
+    The Application API validates the token during the upgrade
+    handshake. If the token is invalid or expired, the upgrade
+    is rejected with HTTP 401. The Interface Layer must handle
+    token expiration by closing the WebSocket, performing a
+    silent refresh (POST /auth/refresh), and reconnecting with
+    the new access token.
+
+  reconnection: >
+    The Interface Layer should implement automatic reconnection
+    with exponential backoff if the WebSocket connection drops.
+    On reconnection, the Interface Layer authenticates with a
+    fresh access token and resumes receiving events. Any events
+    missed during the disconnection can be recovered by calling
+    GET /queries/:id for active queries.
+
+  # ---------------------------------------------------------------------------
+  # Server → Client Messages (sent by Application API)
+  # ---------------------------------------------------------------------------
+  # These messages are pushed to the Interface Layer as query lifecycle
+  # events occur. The Application API relays them from the Pipeline
+  # Service's NDJSON execution stream (see internal-api.yaml) and from
+  # its own internal processing (interpretation lifecycle).
+  #
+  # Every message has an "event" field that identifies the message type
+  # and a "query_id" field that identifies which query it relates to.
+  # The Interface Layer uses query_id to route messages to the correct
+  # UI component.
+  # ---------------------------------------------------------------------------
+
+  server_messages:
+
+    query_interpreting:
+      description: >
+        Sent immediately after the user submits a query and the
+        Application API begins interpretation. Confirms to the
+        Interface Layer that the query was received and is being
+        processed. The Interface Layer should show the
+        interpretation view with an area ready to display
+        streaming text.
+      fields:
+        event: { type: string, value: "query_interpreting" }
+        query_id: { type: string (UUID) }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_interpretation_text_delta:
+      description: >
+        Streams a chunk of the AI's analysis and reasoning text.
+        These events arrive rapidly as the LLM generates tokens.
+        The Interface Layer appends each delta to a growing text
+        display, creating the effect of watching the AI think in
+        real time — analyzing the question, identifying which
+        tools and integrations are relevant, and explaining what
+        it plans to do. This is the same experience as watching
+        a chat message being typed by the AI.
+      fields:
+        event: { type: string, value: "query_interpretation_text_delta" }
+        query_id: { type: string (UUID) }
+        text_delta:
+          type: string
+          description: >
+            A chunk of the AI's response text. Typically a few
+            tokens (1-20 characters). The Interface Layer appends
+            this to the accumulated interpretation text in the UI.
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_plan_ready:
+      description: >
+        Sent when interpretation completes and a plan is available
+        for the user to review. Contains the full plan and summary.
+        The Interface Layer renders the plan approval view.
+      fields:
+        event: { type: string, value: "query_plan_ready" }
+        query_id: { type: string (UUID) }
+        query_plan:
+          type: object
+          description: >
+            The generated query plan. Conforms to the query_plan
+            schema in mcp-tool-interface.yaml.
+        plan_summary: { type: string }
+        estimated_duration_seconds: { type: integer }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_interpretation_failed:
+      description: >
+        Sent when interpretation fails. The Interface Layer shows
+        the error to the user.
+      fields:
+        event: { type: string, value: "query_interpretation_failed" }
+        query_id: { type: string (UUID) }
+        error_code: { type: string }
+        error_message: { type: string }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_execution_started:
+      description: >
+        Sent when execution begins after the user approves a plan.
+        The Interface Layer transitions to the live execution view.
+      fields:
+        event: { type: string, value: "query_execution_started" }
+        query_id: { type: string (UUID) }
+        plan_id: { type: string (UUID) }
+        total_steps: { type: integer }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_step_started:
+      description: >
+        Sent when a plan step begins execution. The Interface Layer
+        adds a new entry to the live execution log showing the tool
+        name and what it is doing.
+      fields:
+        event: { type: string, value: "query_step_started" }
+        query_id: { type: string (UUID) }
+        step_id: { type: string }
+        step_index: { type: integer }
+        tool_name: { type: string }
+        tool_display_name: { type: string }
+        integration_display_name: { type: string }
+        description: { type: string }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_step_completed:
+      description: >
+        Sent when a plan step completes successfully. The Interface
+        Layer updates the execution log entry with duration and a
+        summary of what was returned.
+      fields:
+        event: { type: string, value: "query_step_completed" }
+        query_id: { type: string (UUID) }
+        step_id: { type: string }
+        duration_ms: { type: integer }
+        record_count: { type: integer }
+        summary: { type: string }
+        data_hash: { type: string }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_step_failed:
+      description: >
+        Sent when a plan step fails. The Interface Layer updates the
+        execution log entry with an error indicator.
+      fields:
+        event: { type: string, value: "query_step_failed" }
+        query_id: { type: string (UUID) }
+        step_id: { type: string }
+        duration_ms: { type: integer }
+        error_code: { type: string }
+        error_message: { type: string }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_completed:
+      description: >
+        Sent when execution finishes with results (complete or
+        partial). The Interface Layer transitions to the results
+        view. The full result_data and transparency_log are available
+        via GET /queries/:id; this message contains only the summary
+        to keep the WebSocket message small.
+      fields:
+        event: { type: string, value: "query_completed" }
+        query_id: { type: string (UUID) }
+        execution_status:
+          type: string
+          allowed_values: [completed, partial]
+        result_summary: { type: string }
+        total_records: { type: integer }
+        execution_duration_ms: { type: integer }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_failed:
+      description: >
+        Sent when execution fails entirely or encounters an
+        unrecoverable error. The Interface Layer shows the error.
+      fields:
+        event: { type: string, value: "query_failed" }
+        query_id: { type: string (UUID) }
+        error_code: { type: string }
+        error_message: { type: string }
+        timestamp: { type: string (ISO 8601 datetime) }
+
+  # ---------------------------------------------------------------------------
+  # Client → Server Messages (sent by Interface Layer)
+  # ---------------------------------------------------------------------------
+  # The Interface Layer does not currently send messages through the
+  # WebSocket. All user actions (submit, approve, reject) are performed
+  # via HTTP endpoints. The WebSocket is a one-directional channel from
+  # server to client in the MVP. Future versions may add client-to-server
+  # messages for features like cancelling an in-progress query.
+  # ---------------------------------------------------------------------------
+
+  client_messages: null
+
+# =============================================================================
+# RESPONSE SCHEMAS
+# =============================================================================
+# These schemas define the shapes of objects returned by the endpoints
+# above. Field names and types are derived from the data model
+# (data-model.yaml) but may omit sensitive or internal fields.
+# =============================================================================
+
+response_schemas:
+
+  # ---------------------------------------------------------------------------
+  # organization_response
+  # ---------------------------------------------------------------------------
+  organization_response:
+    description: >
+      Organization details as returned by the API. Derived from
+      the organizations table in data-model.yaml.
+    fields:
+      id:
+        type: string (UUID)
+      name:
+        type: string
+      subscription_tier:
+        type: string
+      created_at:
+        type: string (ISO 8601 datetime)
+      updated_at:
+        type: string (ISO 8601 datetime)
+
+  # ---------------------------------------------------------------------------
+  # user_response
+  # ---------------------------------------------------------------------------
+  user_response:
+    description: >
+      User details as returned by the API. Excludes password_hash
+      and user_class (internal concern). Derived from the users
+      table in data-model.yaml.
+    fields:
+      id:
+        type: string (UUID)
+      organization_id:
+        type: string (UUID)
+      email:
+        type: string
+      display_name:
+        type: string
+      role:
+        type: string
+        allowed_values: [admin, member]
+      status:
+        type: string
+        allowed_values: [active, disabled]
+      last_login_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+      created_at:
+        type: string (ISO 8601 datetime)
+
+  # ---------------------------------------------------------------------------
+  # invitation_response
+  # ---------------------------------------------------------------------------
+  invitation_response:
+    description: >
+      Invitation details as returned by the API. Excludes the
+      token hash. Derived from the invitations table in
+      data-model.yaml.
+    fields:
+      id:
+        type: string (UUID)
+      email:
+        type: string
+      role:
+        type: string
+        allowed_values: [admin, member]
+      status:
+        type: string
+        allowed_values: [pending, accepted, expired, revoked]
+      invited_by:
+        type: object
+        description: >
+          Summary of the user who created the invitation.
+        fields:
+          id:
+            type: string (UUID)
+          display_name:
+            type: string
+      expires_at:
+        type: string (ISO 8601 datetime)
+      accepted_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+      created_at:
+        type: string (ISO 8601 datetime)
+
+  # ---------------------------------------------------------------------------
+  # integration_response
+  # ---------------------------------------------------------------------------
+  integration_response:
+    description: >
+      Integration details as returned by the API. Excludes
+      credentials_encrypted (never exposed through the API).
+      Derived from the integrations table in data-model.yaml.
+    fields:
+      id:
+        type: string (UUID)
+      type:
+        type: string
+        allowed_values: [aws, google_workspace, github]
+      display_name:
+        type: string
+      status:
+        type: string
+        allowed_values: [active, inactive, error]
+      connected_by:
+        type: object
+        description: >
+          Summary of the admin who connected this integration.
+        fields:
+          id:
+            type: string (UUID)
+          display_name:
+            type: string
+      last_health_check_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+      last_health_check_status:
+        type: string
+        nullable: true
+        allowed_values: [healthy, unhealthy, unknown]
+      created_at:
+        type: string (ISO 8601 datetime)
+
+  # ---------------------------------------------------------------------------
+  # query_response (summary, used in lists)
+  # ---------------------------------------------------------------------------
+  query_response:
+    description: >
+      Query summary as returned in list endpoints and after
+      submission/approval/rejection. Excludes large fields
+      (query_plan, result_data, transparency_log) for performance.
+      Derived from the queries table in data-model.yaml.
+    fields:
+      id:
+        type: string (UUID)
+      query_text:
+        type: string
+      status:
+        type: string
+        allowed_values:
+          - interpreting
+          - awaiting_approval
+          - approved
+          - executing
+          - completed
+          - failed
+          - rejected
+      plan_summary:
+        type: string
+        nullable: true
+        description: >
+          Present when status is "awaiting_approval" or later.
+      result_summary:
+        type: string
+        nullable: true
+        description: >
+          Present when status is "completed".
+      error_message:
+        type: string
+        nullable: true
+        description: >
+          Present when status is "failed" or when a completed
+          query had partial results.
+      initiated_by:
+        type: object
+        fields:
+          id:
+            type: string (UUID)
+          display_name:
+            type: string
+      integration_ids:
+        type: array of string (UUID)
+      submitted_at:
+        type: string (ISO 8601 datetime)
+      completed_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+
+  # ---------------------------------------------------------------------------
+  # query_detail_response (full, used in GET /queries/:id)
+  # ---------------------------------------------------------------------------
+  query_detail_response:
+    description: >
+      Full query details including plan, results, and transparency
+      log. Used by GET /queries/:id. Extends query_response with
+      the large JSONB fields.
+    extends: query_response
+    additional_fields:
+      query_plan:
+        type: object
+        nullable: true
+        description: >
+          The query plan generated by the Interpreter. Conforms
+          to the query_plan schema in mcp-tool-interface.yaml.
+          Present when status is "awaiting_approval" or later.
+          The Interface Layer renders this during the approval
+          step, showing each plan step with its tool name,
+          description, and parameters.
+      result_data:
+        type: object
+        nullable: true
+        description: >
+          The structured query results. Conforms to the result_data
+          schema in internal-api.yaml. Present when status is
+          "completed". The Interface Layer renders this as one or
+          more tables using the columns and rows structure.
+      transparency_log:
+        type: object
+        nullable: true
+        description: >
+          The complete execution log. Conforms to the
+          transparency_log schema in mcp-tool-interface.yaml.
+          Present when status is "completed" or "failed" (if
+          execution was attempted). The Interface Layer renders
+          this as an expandable section showing each tool
+          invocation with its timing, status, and data hash.
+      error_details:
+        type: object
+        nullable: true
+        description: >
+          Structured error information when status is "failed".
+          Contains the stage, error code, and additional context.
+      plan_generated_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+      approved_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+      execution_started_at:
+        type: string (ISO 8601 datetime)
+        nullable: true
+
+  # ---------------------------------------------------------------------------
+  # activity_log_response
+  # ---------------------------------------------------------------------------
+  activity_log_response:
+    description: >
+      Activity log entry as returned by the API. Derived from
+      the activity_logs table in data-model.yaml.
+    fields:
+      id:
+        type: string (UUID)
+      user:
+        type: object
+        description: >
+          The user who performed the action.
+        fields:
+          id:
+            type: string (UUID)
+          display_name:
+            type: string
+          email:
+            type: string
+      action:
+        type: string
+        allowed_values:
+          - user_registered
+          - user_login
+          - user_invited
+          - user_removed
+          - user_role_changed
+          - integration_connected
+          - integration_disconnected
+          - integration_health_checked
+          - query_submitted
+          - query_plan_approved
+          - query_plan_rejected
+          - organization_updated
+      target_type:
+        type: string
+        nullable: true
+        allowed_values: [user, integration, query, organization]
+      target_id:
+        type: string (UUID)
+        nullable: true
+      metadata:
+        type: object
+        nullable: true
+        description: >
+          Additional context. Structure varies by action type.
+      ip_address:
+        type: string
+        nullable: true
+      created_at:
+        type: string (ISO 8601 datetime)

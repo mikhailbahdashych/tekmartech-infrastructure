@@ -1,0 +1,1004 @@
+# Tekmar Data Model Specification
+# Boundary 4: Application API / Admin API ↔ PostgreSQL
+#
+# Version: 1.0.0 (MVP)
+# Status: Active
+# Last updated: 2026-03-19
+#
+# This specification defines the complete database schema for the MVP.
+# Both tekmar-api and tekmar-admin-api connect to this database.
+# Migrations are managed exclusively by tekmar-api.
+#
+# Conventions:
+#   - All primary keys are UUID v4, column name "id"
+#   - All tables include "created_at" (set on insert, never modified)
+#   - Most tables include "updated_at" (set on insert, modified on update)
+#   - All timestamps are stored as TIMESTAMPTZ (UTC)
+#   - All foreign keys use ON DELETE RESTRICT unless noted otherwise
+#   - All string fields use VARCHAR with explicit max length
+#   - Organization-scoped tables always include "organization_id" as a
+#     non-nullable foreign key, and all application-level queries against
+#     these tables MUST include organization_id in the WHERE clause
+#   - Enum values are stored as VARCHAR, validated at the application level
+
+schema_version: "1.0.0"
+database: postgresql
+minimum_version: "15"
+
+# =============================================================================
+# ENTITIES
+# =============================================================================
+
+entities:
+
+  # ---------------------------------------------------------------------------
+  # organizations
+  # ---------------------------------------------------------------------------
+  # The root tenant entity. All data in the system belongs to an organization.
+  # Created when the first user registers and becomes the founding admin.
+  # ---------------------------------------------------------------------------
+  organizations:
+    description: >
+      The root tenant entity. Every piece of data in the system is scoped
+      to an organization. An organization is created during registration
+      by its founding admin user.
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+        description: Unique identifier for the organization.
+
+      name:
+        type: VARCHAR(255)
+        nullable: false
+        description: >
+          Display name of the organization. Shown in the interface
+          and in exported evidence packages.
+
+      subscription_tier:
+        type: VARCHAR(50)
+        nullable: false
+        default: "'free'"
+        description: >
+          The organization's current subscription tier. Determines
+          feature limits (integrations, queries, users). Not enforced
+          in the MVP; all organizations operate as if on the highest
+          tier. Exists in the schema to avoid restructuring later.
+        allowed_values:
+          - free
+          - starter
+          - professional
+          - enterprise
+
+      data_retention_days:
+        type: INTEGER
+        nullable: true
+        default: "NULL"
+        description: >
+          Number of days to retain query results, transparency logs,
+          and exported files. NULL means indefinite retention. Not
+          enforced in the MVP; exists in the schema for future use.
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_organizations_name
+        columns: [name]
+        unique: false
+        purpose: Support searching organizations by name (admin panel).
+
+  # ---------------------------------------------------------------------------
+  # users
+  # ---------------------------------------------------------------------------
+  # A person who can access the system. Always belongs to exactly one
+  # organization. Has a role (admin or member) that determines permissions
+  # within the organization. Has a user_class that distinguishes customer
+  # users from internal operators.
+  # ---------------------------------------------------------------------------
+  users:
+    description: >
+      A person who can access the system. Belongs to exactly one
+      organization. Role determines permissions within the organization.
+      User class distinguishes customer users from internal Tekmar
+      operators (used by the admin panel, not in the MVP).
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+
+      organization_id:
+        type: UUID
+        nullable: false
+        references: organizations.id
+        on_delete: RESTRICT
+        description: The organization this user belongs to.
+
+      email:
+        type: VARCHAR(320)
+        nullable: false
+        description: >
+          The user's email address. Used for authentication and
+          notifications. Unique across the entire system, not just
+          within an organization, because a person cannot belong
+          to multiple organizations.
+
+      password_hash:
+        type: VARCHAR(255)
+        nullable: false
+        description: >
+          Bcrypt hash of the user's password. Never stored or
+          transmitted in plain text.
+
+      display_name:
+        type: VARCHAR(255)
+        nullable: false
+        description: >
+          The user's display name, shown in the interface, in
+          query history, and in activity logs.
+
+      role:
+        type: VARCHAR(20)
+        nullable: false
+        default: "'member'"
+        description: >
+          The user's role within their organization. Determines
+          what actions they can perform.
+        allowed_values:
+          - admin
+          - member
+
+      user_class:
+        type: VARCHAR(30)
+        nullable: false
+        default: "'customer'"
+        description: >
+          Distinguishes customer users (who access the product
+          through the public interface) from internal operators
+          (Tekmar employees who access the admin panel). Internal
+          operators are not created in the MVP but the field exists
+          to avoid restructuring the user model later.
+        allowed_values:
+          - customer
+          - internal_operator
+
+      status:
+        type: VARCHAR(20)
+        nullable: false
+        default: "'active'"
+        description: >
+          The user's account status. Active users can log in and
+          use the system. Disabled users cannot log in. The
+          "invited" status is not used on this table; pending
+          invitations are tracked in the invitations table, and
+          the user record is created only when the invitation
+          is accepted.
+        allowed_values:
+          - active
+          - disabled
+
+      last_login_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: >
+          Timestamp of the user's most recent successful login.
+          Updated by the authentication endpoint on each login.
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_users_email
+        columns: [email]
+        unique: true
+        purpose: >
+          Enforce global uniqueness of email addresses and support
+          fast lookup during authentication.
+
+      - name: idx_users_organization_id
+        columns: [organization_id]
+        unique: false
+        purpose: >
+          Support listing all users within an organization. Every
+          user-facing query that lists users filters by organization_id.
+
+      - name: idx_users_organization_id_role
+        columns: [organization_id, role]
+        unique: false
+        purpose: >
+          Support filtering users by role within an organization,
+          for example listing all admins.
+
+  # ---------------------------------------------------------------------------
+  # invitations
+  # ---------------------------------------------------------------------------
+  # A pending invitation for a new user to join an organization. Created
+  # by an admin. The user record is created when the invitation is accepted.
+  # Invitations expire after a configurable period.
+  # ---------------------------------------------------------------------------
+  invitations:
+    description: >
+      A pending invitation for a new user to join an organization.
+      Created by an admin, consumed when the invited person accepts.
+      The user record is created at acceptance time, not at
+      invitation time.
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+
+      organization_id:
+        type: UUID
+        nullable: false
+        references: organizations.id
+        on_delete: RESTRICT
+        description: The organization the invited person will join.
+
+      email:
+        type: VARCHAR(320)
+        nullable: false
+        description: >
+          The email address of the person being invited. Used to
+          validate that the person accepting the invitation is the
+          intended recipient.
+
+      role:
+        type: VARCHAR(20)
+        nullable: false
+        default: "'member'"
+        description: >
+          The role the invited person will have when they join.
+        allowed_values:
+          - admin
+          - member
+
+      invited_by:
+        type: UUID
+        nullable: false
+        references: users.id
+        on_delete: RESTRICT
+        description: The admin user who created this invitation.
+
+      token:
+        type: VARCHAR(255)
+        nullable: false
+        description: >
+          A cryptographically random token included in the invitation
+          link. Used to authenticate the invitation acceptance. Stored
+          as a hash, not in plain text.
+
+      status:
+        type: VARCHAR(20)
+        nullable: false
+        default: "'pending'"
+        description: The current state of the invitation.
+        allowed_values:
+          - pending
+          - accepted
+          - expired
+          - revoked
+
+      accepted_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: >
+          Timestamp when the invitation was accepted. NULL if not
+          yet accepted.
+
+      expires_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        description: >
+          Timestamp after which the invitation can no longer be
+          accepted. Set at creation time based on a system-wide
+          or organization-level configuration.
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_invitations_token
+        columns: [token]
+        unique: true
+        purpose: >
+          Fast lookup when a user clicks an invitation link. The
+          token is the primary lookup key during acceptance.
+
+      - name: idx_invitations_organization_id
+        columns: [organization_id]
+        unique: false
+        purpose: >
+          List all invitations for an organization. Used by admins
+          to view pending invitations.
+
+      - name: idx_invitations_email
+        columns: [email]
+        unique: false
+        purpose: >
+          Check whether a pending invitation already exists for
+          an email address to prevent duplicate invitations.
+
+  # ---------------------------------------------------------------------------
+  # refresh_tokens
+  # ---------------------------------------------------------------------------
+  # Stored refresh tokens for session management. Access tokens are
+  # stateless JWTs; refresh tokens are stored to enable revocation.
+  # ---------------------------------------------------------------------------
+  refresh_tokens:
+    description: >
+      Stored refresh tokens for session management. Access tokens
+      are short-lived stateless JWTs. Refresh tokens are long-lived
+      and stored in the database so they can be revoked (on logout,
+      password change, or account disable).
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+
+      user_id:
+        type: UUID
+        nullable: false
+        references: users.id
+        on_delete: CASCADE
+        description: >
+          The user this refresh token belongs to. CASCADE delete
+          ensures tokens are removed when a user is deleted.
+
+      token_hash:
+        type: VARCHAR(255)
+        nullable: false
+        description: >
+          SHA-256 hash of the refresh token value. The plain text
+          token is sent to the client and never stored.
+
+      expires_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        description: >
+          Timestamp after which this refresh token is no longer
+          valid, even if it has not been revoked.
+
+      revoked_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: >
+          Timestamp when this token was revoked. A revoked token
+          cannot be used even if it has not expired. Set on logout,
+          password change, or account disable.
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_refresh_tokens_token_hash
+        columns: [token_hash]
+        unique: true
+        purpose: >
+          Fast lookup when validating a refresh token. The hash
+          is the primary lookup key.
+
+      - name: idx_refresh_tokens_user_id
+        columns: [user_id]
+        unique: false
+        purpose: >
+          Revoke all refresh tokens for a user (on password change
+          or account disable).
+
+  # ---------------------------------------------------------------------------
+  # integrations
+  # ---------------------------------------------------------------------------
+  # A connected external system (AWS, Google Workspace, etc.) belonging to
+  # an organization. Stores encrypted credentials that are decrypted by
+  # the Application API when assembling query context for the Pipeline
+  # Service.
+  # ---------------------------------------------------------------------------
+  integrations:
+    description: >
+      A connected external system belonging to an organization.
+      Stores encrypted credentials used to authenticate with the
+      external system's API when executing queries.
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+
+      organization_id:
+        type: UUID
+        nullable: false
+        references: organizations.id
+        on_delete: RESTRICT
+
+      type:
+        type: VARCHAR(50)
+        nullable: false
+        description: >
+          Identifies which external system this integration connects
+          to, and therefore which MCP server handles it. Must match
+          a registered MCP server type.
+        allowed_values_mvp:
+          - aws
+          - google_workspace
+          - github
+
+      display_name:
+        type: VARCHAR(255)
+        nullable: false
+        description: >
+          A human-readable name for this integration, set by the
+          admin who connects it. For example, "Production AWS" or
+          "Corporate Google Workspace". Shown in the interface when
+          selecting which integrations to query.
+
+      status:
+        type: VARCHAR(20)
+        nullable: false
+        default: "'active'"
+        description: >
+          The current operational status of this integration.
+        allowed_values:
+          - active
+          - inactive
+          - error
+
+      credentials_encrypted:
+        type: TEXT
+        nullable: false
+        description: >
+          The integration credentials, encrypted at rest. The
+          structure of the decrypted payload varies by integration
+          type (for example, AWS credentials include access_key_id
+          and secret_access_key; Google Workspace credentials
+          include a service account JSON key). The Application API
+          encrypts on write and decrypts on read. No other
+          component accesses this field directly.
+
+      connected_by:
+        type: UUID
+        nullable: false
+        references: users.id
+        on_delete: RESTRICT
+        description: The admin user who connected this integration.
+
+      last_health_check_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: >
+          Timestamp of the most recent connection health check.
+          Updated when an admin manually tests the connection or
+          when the system performs a periodic health check.
+
+      last_health_check_status:
+        type: VARCHAR(20)
+        nullable: true
+        default: "NULL"
+        description: >
+          Result of the most recent health check.
+        allowed_values:
+          - healthy
+          - unhealthy
+          - unknown
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_integrations_organization_id
+        columns: [organization_id]
+        unique: false
+        purpose: >
+          List all integrations for an organization. Used when
+          assembling query context and in the integration
+          management interface.
+
+      - name: idx_integrations_organization_id_type
+        columns: [organization_id, type]
+        unique: false
+        purpose: >
+          Filter integrations by type within an organization.
+          Used when determining which MCP tools are available
+          for a query.
+
+  # ---------------------------------------------------------------------------
+  # queries
+  # ---------------------------------------------------------------------------
+  # The core entity of the product. Represents a single query lifecycle
+  # from submission through interpretation, approval, execution, and
+  # result delivery. Stores the complete history including the original
+  # text, the generated plan, the results, and the transparency log.
+  # ---------------------------------------------------------------------------
+  queries:
+    description: >
+      The core entity. A single query lifecycle from user submission
+      through AI interpretation, user approval, deterministic
+      execution, and result delivery. Stores the complete audit
+      trail of the query.
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+
+      organization_id:
+        type: UUID
+        nullable: false
+        references: organizations.id
+        on_delete: RESTRICT
+
+      initiated_by:
+        type: UUID
+        nullable: false
+        references: users.id
+        on_delete: RESTRICT
+        description: The user who submitted the query.
+
+      query_text:
+        type: TEXT
+        nullable: false
+        description: >
+          The original natural language question submitted by the
+          user. Stored verbatim and never modified.
+
+      status:
+        type: VARCHAR(30)
+        nullable: false
+        default: "'interpreting'"
+        description: >
+          The current lifecycle state of the query.
+        allowed_values:
+          - interpreting
+          - awaiting_approval
+          - approved
+          - executing
+          - completed
+          - failed
+          - rejected
+
+      integration_ids:
+        type: UUID[]
+        nullable: false
+        description: >
+          Array of integration IDs that were included in the scope
+          of this query. Recorded at submission time so the query
+          history accurately reflects which systems were queried,
+          even if integrations are later disconnected.
+
+      query_plan:
+        type: JSONB
+        nullable: true
+        default: "NULL"
+        description: >
+          The structured query plan generated by the Interpreter.
+          NULL while the query is in "interpreting" status. The
+          JSON structure conforms to the query_plan schema defined
+          in mcp-tool-interface.yaml. Stored as JSONB to
+          enable indexing and querying of plan contents.
+
+      plan_summary:
+        type: TEXT
+        nullable: true
+        default: "NULL"
+        description: >
+          A human-readable summary of what the query plan will do,
+          generated by the Interpreter alongside the plan. Shown
+          to the user during the approval step.
+
+      result_data:
+        type: JSONB
+        nullable: true
+        default: "NULL"
+        description: >
+          The structured query results produced by the Output
+          Engine. NULL until the query reaches "completed" status.
+          Contains the formatted data that is displayed in the
+          interface.
+
+      result_summary:
+        type: TEXT
+        nullable: true
+        default: "NULL"
+        description: >
+          A human-readable summary of the query results, generated
+          by the Output Engine. Displayed as the headline result
+          in the interface and in notifications.
+
+      transparency_log:
+        type: JSONB
+        nullable: true
+        default: "NULL"
+        description: >
+          The complete execution log recording every MCP tool call
+          made during query execution: tool name, parameters,
+          timestamps, response status, response time, and data
+          hashes. NULL until execution completes (either successfully
+          or with an error). Stored as JSONB for queryability.
+
+      error_message:
+        type: TEXT
+        nullable: true
+        default: "NULL"
+        description: >
+          A human-readable error description if the query failed
+          at any stage (interpretation, execution, or output
+          formatting). NULL if the query completed successfully
+          or has not yet failed.
+
+      error_details:
+        type: JSONB
+        nullable: true
+        default: "NULL"
+        description: >
+          Structured error information for debugging, including
+          the stage at which the error occurred, the specific
+          MCP tool call that failed (if applicable), and any
+          error codes or stack traces from external systems.
+
+      submitted_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+        description: When the user submitted the query.
+
+      plan_generated_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: When the Interpreter produced the query plan.
+
+      approved_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: >
+          When the user approved the query plan for execution.
+          NULL if the query was rejected or has not yet been
+          approved.
+
+      execution_started_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: When the Execution Engine began processing.
+
+      completed_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "NULL"
+        description: >
+          When the query reached a terminal state (completed,
+          failed, or rejected).
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_queries_organization_id_submitted_at
+        columns: [organization_id, submitted_at]
+        unique: false
+        order: DESC
+        purpose: >
+          Primary listing query: most recent queries for an
+          organization. Used by the query history view in the
+          interface.
+
+      - name: idx_queries_organization_id_status
+        columns: [organization_id, status]
+        unique: false
+        purpose: >
+          Filter queries by status within an organization. Used
+          to find in-progress queries, failed queries, etc.
+
+      - name: idx_queries_organization_id_initiated_by
+        columns: [organization_id, initiated_by]
+        unique: false
+        purpose: >
+          Filter queries by the user who initiated them. Used
+          for per-user query history views.
+
+  # ---------------------------------------------------------------------------
+  # activity_logs
+  # ---------------------------------------------------------------------------
+  # Records significant actions performed within the platform. Serves as
+  # the internal audit trail for the product itself (distinct from
+  # transparency logs, which record what happened during query execution
+  # in external systems).
+  # ---------------------------------------------------------------------------
+  activity_logs:
+    description: >
+      Internal audit trail recording significant actions performed
+      within the platform. Distinct from transparency logs (which
+      record MCP tool calls during query execution). Activity logs
+      answer "who did what in Tekmar" while transparency logs
+      answer "what did Tekmar do in my infrastructure."
+    columns:
+      id:
+        type: UUID
+        primary_key: true
+        default: gen_random_uuid()
+
+      organization_id:
+        type: UUID
+        nullable: true
+        references: organizations.id
+        on_delete: RESTRICT
+        description: >
+          The organization context for this action. NULL for
+          system-wide actions performed by internal operators
+          that are not scoped to a specific organization.
+
+      user_id:
+        type: UUID
+        nullable: false
+        references: users.id
+        on_delete: RESTRICT
+        description: The user who performed the action.
+
+      action:
+        type: VARCHAR(50)
+        nullable: false
+        description: >
+          The type of action that was performed. New action types
+          can be added as features are built without schema changes.
+        allowed_values_mvp:
+          - user_registered
+          - user_login
+          - user_invited
+          - user_removed
+          - user_role_changed
+          - integration_connected
+          - integration_disconnected
+          - integration_health_checked
+          - query_submitted
+          - query_plan_approved
+          - query_plan_rejected
+          - organization_updated
+
+      target_type:
+        type: VARCHAR(50)
+        nullable: true
+        default: "NULL"
+        description: >
+          The type of entity that was acted upon. Combined with
+          target_id, this provides a reference to the affected
+          entity.
+        allowed_values_mvp:
+          - user
+          - integration
+          - query
+          - organization
+
+      target_id:
+        type: UUID
+        nullable: true
+        default: "NULL"
+        description: >
+          The ID of the entity that was acted upon. For example,
+          if action is "user_invited" and target_type is "user",
+          target_id is the ID of the invited user record (once
+          created). NULL if the action does not target a specific
+          entity.
+
+      metadata:
+        type: JSONB
+        nullable: true
+        default: "NULL"
+        description: >
+          Additional context about the action, structured as JSON.
+          For example, a role change might include
+          {"from": "member", "to": "admin"}. An integration
+          connection might include {"type": "aws", "display_name":
+          "Production AWS"}. The structure varies by action type
+          and is not formally constrained.
+
+      ip_address:
+        type: VARCHAR(45)
+        nullable: true
+        default: "NULL"
+        description: >
+          The IP address from which the action was performed.
+          Stored for security auditing. VARCHAR(45) accommodates
+          both IPv4 and IPv6 addresses.
+
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: NOW()
+
+    indexes:
+      - name: idx_activity_logs_organization_id_created_at
+        columns: [organization_id, created_at]
+        unique: false
+        order: DESC
+        purpose: >
+          Primary listing query: most recent activity for an
+          organization. Used by the activity log view.
+
+      - name: idx_activity_logs_user_id_created_at
+        columns: [user_id, created_at]
+        unique: false
+        order: DESC
+        purpose: >
+          Filter activity by user. Used to audit a specific
+          user's actions.
+
+      - name: idx_activity_logs_action
+        columns: [action]
+        unique: false
+        purpose: >
+          Filter activity by action type. Used for targeted
+          auditing (e.g., "show me all integration connections").
+
+# =============================================================================
+# RELATIONSHIPS
+# =============================================================================
+
+relationships:
+  - description: "An organization has many users."
+    from: organizations.id
+    to: users.organization_id
+    cardinality: one_to_many
+
+  - description: "An organization has many invitations."
+    from: organizations.id
+    to: invitations.organization_id
+    cardinality: one_to_many
+
+  - description: "An organization has many integrations."
+    from: organizations.id
+    to: integrations.organization_id
+    cardinality: one_to_many
+
+  - description: "An organization has many queries."
+    from: organizations.id
+    to: queries.organization_id
+    cardinality: one_to_many
+
+  - description: "An organization has many activity logs."
+    from: organizations.id
+    to: activity_logs.organization_id
+    cardinality: one_to_many
+
+  - description: "A user belongs to one organization."
+    from: users.organization_id
+    to: organizations.id
+    cardinality: many_to_one
+
+  - description: "A user has many refresh tokens."
+    from: users.id
+    to: refresh_tokens.user_id
+    cardinality: one_to_many
+
+  - description: "A user has many queries."
+    from: users.id
+    to: queries.initiated_by
+    cardinality: one_to_many
+
+  - description: "A user has many activity logs."
+    from: users.id
+    to: activity_logs.user_id
+    cardinality: one_to_many
+
+  - description: "A user can create many invitations."
+    from: users.id
+    to: invitations.invited_by
+    cardinality: one_to_many
+
+  - description: "A user can connect many integrations."
+    from: users.id
+    to: integrations.connected_by
+    cardinality: one_to_many
+
+  - description: "A query references one or more integrations by ID array."
+    from: queries.integration_ids
+    to: integrations.id
+    cardinality: many_to_many_via_array
+    note: >
+      This is not a join table relationship. The integration_ids
+      column is a UUID array that stores a snapshot of which
+      integrations were in scope at query submission time.
+
+# =============================================================================
+# CONSTRAINTS
+# =============================================================================
+
+constraints:
+  - name: chk_users_email_lowercase
+    table: users
+    type: CHECK
+    expression: "email = LOWER(email)"
+    description: >
+      Ensure emails are always stored in lowercase to prevent
+      duplicate accounts due to case differences.
+
+  - name: chk_invitations_email_lowercase
+    table: invitations
+    type: CHECK
+    expression: "email = LOWER(email)"
+    description: >
+      Ensure invitation emails are always stored in lowercase
+      for consistent matching.
+
+  - name: chk_invitations_expires_after_created
+    table: invitations
+    type: CHECK
+    expression: "expires_at > created_at"
+    description: >
+      Ensure the expiration timestamp is always after creation.
+
+  - name: chk_queries_completed_at_after_submitted
+    table: queries
+    type: CHECK
+    expression: "completed_at IS NULL OR completed_at >= submitted_at"
+    description: >
+      Ensure completion is never recorded before submission.
+
+  - name: chk_data_retention_positive
+    table: organizations
+    type: CHECK
+    expression: "data_retention_days IS NULL OR data_retention_days > 0"
+    description: >
+      Ensure retention days is a positive integer when set.
+
+# =============================================================================
+# NOTES ON FUTURE EXTENSIONS
+# =============================================================================
+# The following entities are NOT included in the MVP schema but are
+# anticipated for future versions. They are noted here so that the
+# MVP schema does not inadvertently make their addition difficult.
+#
+# - saved_queries: Bookmarked query definitions for reuse. Will
+#   reference organizations, users, and store a query_text plus
+#   optional integration scope.
+#
+# - scheduled_queries: Saved queries with execution schedules.
+#   Will reference saved_queries and store cron expressions or
+#   interval definitions.
+#
+# - notification_preferences: Per-organization channel configs
+#   (email addresses, webhook URLs, in-app settings).
+#
+# - api_keys: Programmatic access tokens scoped to organizations,
+#   with configurable permissions and expiration.
+#
+# - export_files: Metadata for generated evidence packages stored
+#   in object storage, including file path, format, size, and
+#   expiration timestamp.
+#
+# None of these future entities require changes to existing MVP
+# tables. They will be added as new tables with foreign keys to
+# existing entities.
