@@ -343,7 +343,17 @@ class TestQueryInterpretation:
 
         _state["ws_events"] = events_received
         event_types = [e.get("event") for e in events_received]
-        print(f"\n  WebSocket events: {event_types}")
+        # Summarize: count deltas rather than listing them all
+        delta_count = event_types.count("query_interpretation_text_delta")
+        unique_types = list(dict.fromkeys(event_types))  # preserve order, dedupe
+        print(f"\n  WebSocket events: {unique_types} ({delta_count} text deltas)")
+
+        # Verify query_interpreting event was sent first (per contract)
+        if event_types and event_types[0] == "query_interpreting":
+            print("  query_interpreting event received (contract-compliant)")
+        else:
+            print(f"  WARNING: first event was '{event_types[0] if event_types else 'none'}', "
+                  f"expected 'query_interpreting'")
 
         # Check if interpretation succeeded or failed
         if "query_plan_ready" in event_types:
@@ -424,10 +434,7 @@ class TestQueryExecution:
             headers=auth_headers(),
             timeout=10,
         )
-        # Contract says 200, API returns 201 — accept both, document discrepancy
-        assert r.status_code in (200, 201), f"Expected 200/201, got {r.status_code}: {r.text}"
-        if r.status_code == 201:
-            print("\n  NOTE: API returns 201 for approve — contract specifies 200")
+        assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
         body = r.json()
         query = body.get("query", body)
         assert query.get("status") in ("approved", "executing"), f"Unexpected status: {query.get('status')}"
@@ -471,12 +478,13 @@ class TestQueryExecution:
             comp = next(e for e in exec_events if e["event"] == "query_completed")
             assert comp.get("execution_status") in ("completed", "partial"), \
                 f"Unexpected execution_status: {comp.get('execution_status')}"
-            total = comp.get("total_records", 0)
-            if total == 0:
-                print("  NOTE: total_records is 0 in WS event — will verify via GET")
-            else:
-                assert comp.get("result_summary"), "result_summary missing"
-            print(f"  Execution completed: total_records={total}, duration={comp.get('execution_duration_ms')}ms")
+            assert comp.get("result_summary"), "result_summary missing from query_completed event"
+            assert comp.get("total_records", 0) > 0, \
+                f"total_records should be > 0, got {comp.get('total_records')}"
+            assert comp.get("execution_duration_ms", 0) > 0, \
+                f"execution_duration_ms should be > 0, got {comp.get('execution_duration_ms')}"
+            print(f"  Execution completed: total_records={comp['total_records']}, "
+                  f"duration={comp['execution_duration_ms']}ms")
         elif "query_failed" in event_types:
             fail = next(e for e in exec_events if e["event"] == "query_failed")
             print(f"  Execution failed: {fail.get('error_message', 'unknown')}")
@@ -579,10 +587,7 @@ class TestQueryRejection:
             headers=auth_headers(),
             timeout=10,
         )
-        # Contract says 200, API returns 201 — accept both, document discrepancy
-        assert r.status_code in (200, 201), f"Expected 200/201, got {r.status_code}: {r.text}"
-        if r.status_code == 201:
-            print("\n  NOTE: API returns 201 for reject — contract specifies 200")
+        assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
         body = r.json()
         query = body.get("query", body)
         assert query.get("status") == "rejected", f"Expected 'rejected', got {query.get('status')}"
