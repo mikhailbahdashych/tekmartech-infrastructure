@@ -1,0 +1,40 @@
+# Tekmar — Development Docker Compose
+#
+# This file defines the shared infrastructure services for local
+# development. Application services (API, Pipeline, Interface) are
+# run directly on the host during development for hot-reload and
+# faster iteration. They connect to these containerized services.
+#
+# Usage:
+#   cd tekmar-infrastructure/docker
+#   docker compose up -d
+#
+# To stop:
+#   docker compose down
+#
+# To reset the database (destroys all data):
+#   docker compose down -v
+
+services:
+
+  tekmar-db:
+    image: postgres:15
+    container_name: tekmar-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tekmar_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-tekmar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tekmar_dev_password}
+    volumes:
+      - tekmar-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tekmar}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tekmar-db-data:
+    name: tekmar-db-data

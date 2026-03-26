@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+
+# Environment files with secrets (keep .env.example committed)
+env/.env.development
+env/.env.production
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Test artifacts
+tests/e2e/.venv/
+tests/e2e/.pytest_cache/
+tests/e2e/uv.lock
