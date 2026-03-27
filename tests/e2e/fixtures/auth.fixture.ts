@@ -1,4 +1,4 @@
-import { test as base, expect, Page, BrowserContext } from '@playwright/test';
+import { test as base, expect, Page } from '@playwright/test';
 import { config } from '../helpers/config.helper';
 
 export interface TestCredentials {
@@ -8,76 +8,83 @@ export interface TestCredentials {
   displayName: string;
 }
 
-export interface AuthFixtures {
+interface WorkerFixtures {
+  workerCredentials: TestCredentials;
+  workerApiToken: string;
+}
+
+interface TestFixtures {
   authenticatedPage: Page;
   credentials: TestCredentials;
   apiToken: string;
 }
 
-/**
- * Register a new user via the UI and return the page.
- * Each spec file gets a unique user/org so tests don't collide.
- */
-async function registerViaUI(page: Page, creds: TestCredentials): Promise<void> {
-  await page.goto('/register');
-  await page.getByTestId('register-org-name-input').fill(creds.orgName);
-  await page.getByTestId('register-display-name-input').fill(creds.displayName);
-  await page.getByTestId('register-email-input').fill(creds.email);
-  await page.getByTestId('register-password-input').fill(creds.password);
-  await page.getByTestId('register-confirm-password-input').fill(creds.password);
-  await page.getByTestId('register-submit-button').click();
+// Single shared credentials for the entire run.
+// Uses config.runId so all spec files get the same user.
+const sharedCredentials: TestCredentials = {
+  email: `e2e-fixture-${config.runId}@tekmar.test`,
+  password: config.testUserPassword,
+  orgName: `E2E Fixture Org ${config.runId}`,
+  displayName: config.testUserDisplayName,
+};
 
-  const result = await Promise.race([
-    page.waitForURL('**/queries**', { timeout: 15_000 }).then(() => 'ok' as const),
-    page.getByTestId('register-error-text').waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'error' as const),
-  ]);
+let registeredToken: string | null = null;
 
-  if (result === 'error') {
-    await page.goto('/login');
-    await page.getByTestId('login-email-input').fill(creds.email);
-    await page.getByTestId('login-password-input').fill(creds.password);
-    await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
-  }
+async function ensureRegistered(): Promise<string> {
+  if (registeredToken) return registeredToken;
 
-  await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
-}
-
-/**
- * Get a JWT access token via API login (for direct API calls in tests).
- */
-async function getApiToken(creds: TestCredentials): Promise<string> {
-  const resp = await fetch(`${config.apiUrl}/auth/login`, {
+  const regResp = await fetch(`${config.apiUrl}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: creds.email, password: creds.password }),
+    body: JSON.stringify({
+      organization_name: sharedCredentials.orgName,
+      email: sharedCredentials.email,
+      password: sharedCredentials.password,
+      display_name: sharedCredentials.displayName,
+    }),
   });
-  const body = await resp.json();
-  return body.access_token || '';
+
+  if (regResp.status === 201) {
+    registeredToken = (await regResp.json()).access_token;
+  } else {
+    const loginResp = await fetch(`${config.apiUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: sharedCredentials.email, password: sharedCredentials.password }),
+    });
+    registeredToken = (await loginResp.json()).access_token;
+  }
+
+  return registeredToken!;
 }
 
-// Per-worker counter for unique emails
-let fixtureCounter = 0;
+export const test = base.extend<TestFixtures, WorkerFixtures>({
+  workerCredentials: [async ({}, use) => {
+    await use(sharedCredentials);
+  }, { scope: 'worker' }],
 
-export const test = base.extend<AuthFixtures>({
-  credentials: async ({}, use) => {
-    const uniqueTs = Date.now() + (++fixtureCounter);
-    await use({
-      email: `e2e-fixture-${uniqueTs}@tekmar.test`,
-      password: config.testUserPassword,
-      orgName: `E2E Fixture Org ${uniqueTs}`,
-      displayName: config.testUserDisplayName,
-    });
-  },
+  workerApiToken: [async ({}, use) => {
+    const token = await ensureRegistered();
+    await use(token);
+  }, { scope: 'worker' }],
 
-  authenticatedPage: async ({ page, credentials }, use) => {
-    await registerViaUI(page, credentials);
+  // Each test gets a fresh page, logs in via UI, uses the shared user
+  authenticatedPage: async ({ page, workerApiToken }, use) => {
+    await page.goto('/login');
+    await page.getByTestId('login-email-input').fill(sharedCredentials.email);
+    await page.getByTestId('login-password-input').fill(sharedCredentials.password);
+    await page.getByTestId('login-submit-button').click();
+    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
     await use(page);
   },
 
-  apiToken: async ({ credentials }, use) => {
-    const token = await getApiToken(credentials);
-    await use(token);
+  credentials: async ({ workerCredentials }, use) => {
+    await use(workerCredentials);
+  },
+
+  apiToken: async ({ workerApiToken }, use) => {
+    await use(workerApiToken);
   },
 });
 

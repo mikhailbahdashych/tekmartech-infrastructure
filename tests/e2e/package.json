@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
+    "test": "NODE_ENV=development playwright test",
+    "test:prod": "NODE_ENV=production playwright test",
+    "test:headed": "NODE_ENV=development playwright test --headed",
     "test:report": "playwright show-report"
   },
   "keywords": [],

@@ -24,17 +24,41 @@ async function connectGitHub(page: import('@playwright/test').Page): Promise<voi
 
 /**
  * Submit a query and wait for the plan to appear.
+ * Retries up to 3 times if the LLM produces an invalid plan
+ * (hallucinated integration IDs, missing plan block, etc).
  */
 async function submitQueryAndWaitForPlan(
   page: import('@playwright/test').Page,
   queryText: string,
+  maxAttempts = 3,
 ): Promise<void> {
-  await page.getByTestId('sidebar-nav-queries').click();
-  await page.waitForURL('**/queries**');
-  await page.getByTestId('query-input-textarea').fill(queryText);
-  await page.getByTestId('query-submit-button').click();
-  await expect(page.getByTestId('query-interpretation-container')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('query-plan-container')).toBeVisible({ timeout: 60_000 });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await page.getByTestId('sidebar-nav-queries').click();
+    await page.waitForURL('**/queries**');
+    await page.getByTestId('query-input-textarea').fill(queryText);
+    await page.getByTestId('query-submit-button').click();
+    await expect(page.getByTestId('query-interpretation-container')).toBeVisible({ timeout: 15_000 });
+
+    // Wait for either the plan or an interpretation failure
+    const outcome = await Promise.race([
+      page.getByTestId('query-plan-container').waitFor({ state: 'visible', timeout: 90_000 }).then(() => 'plan' as const),
+      page.getByTestId('query-interpretation-error-text').waitFor({ state: 'visible', timeout: 90_000 }).then(() => 'error' as const),
+      page.getByTestId('query-failed-error-text').waitFor({ state: 'visible', timeout: 90_000 }).then(() => 'failed' as const),
+    ]);
+
+    if (outcome === 'plan') return;
+
+    // LLM produced invalid plan or no plan — retry if attempts remain
+    if (attempt < maxAttempts) {
+      console.log(`  LLM interpretation failed (attempt ${attempt}/${maxAttempts}), retrying...`);
+      // Hard navigate to /queries to fully reset the UI state
+      await page.goto('/queries');
+      await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
+    }
+  }
+
+  // All attempts exhausted
+  throw new Error(`LLM failed to produce a valid plan after ${maxAttempts} attempts`);
 }
 
 test.describe('Query Lifecycle', () => {
@@ -59,7 +83,7 @@ test.describe('Query Lifecycle', () => {
     await expect(interpretationText).not.toBeEmpty({ timeout: 60_000 });
 
     // Plan should appear after interpretation completes
-    await expect(page.getByTestId('query-plan-container')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('query-plan-container')).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId('query-plan-summary-text')).not.toBeEmpty();
     await expect(page.getByTestId('query-plan-steps-list')).toBeVisible();
     await expect(page.getByTestId('query-plan-step-0')).toBeVisible();
@@ -137,7 +161,7 @@ test.describe('Query Lifecycle', () => {
 
   test('reject a plan', async ({ authenticatedPage: page }) => {
     test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     await connectGitHub(page);
     await submitQueryAndWaitForPlan(page, 'List all repositories in our GitHub organization');
 

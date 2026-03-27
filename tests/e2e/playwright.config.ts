@@ -1,10 +1,8 @@
 import { defineConfig } from '@playwright/test';
-import dotenv from 'dotenv';
-import path from 'path';
 
-dotenv.config({ path: path.resolve(__dirname, '.env.test') });
-// Fallback: load from env/.env.development at repo root
-dotenv.config({ path: path.resolve(__dirname, '../../env/.env.development') });
+// Env loading is handled by helpers/config.helper.ts based on NODE_ENV.
+// NODE_ENV=development → loads env/.env.development
+// NODE_ENV=production  → loads env/.env.production
 
 export default defineConfig({
   testDir: './specs',

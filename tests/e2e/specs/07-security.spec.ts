@@ -1,11 +1,10 @@
 import { test as base, expect } from '@playwright/test';
 import { config } from '../helpers/config.helper';
 
-const ts = Date.now() + Math.floor(Math.random() * 10000);
-const adminEmail = `e2e-sec-admin-${ts}@tekmar.test`;
-const memberEmail = `e2e-sec-member-${ts}@tekmar.test`;
+const adminEmail = `e2e-sec-admin-${config.runId}@tekmar.test`;
+const memberEmail = `e2e-sec-member-${config.runId}@tekmar.test`;
 const password = config.testUserPassword;
-const orgName = `Security Test Org ${ts}`;
+const orgName = `Security Test Org ${config.runId}`;
 
 base.describe.serial('Authorization & Security', () => {
   let invitationToken: string;
