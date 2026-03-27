@@ -11,11 +11,6 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# Test artifacts — backend
-tests/backend/.venv/
-tests/backend/.pytest_cache/
-tests/backend/uv.lock
-
 # Test artifacts — e2e
 tests/e2e/node_modules/
 tests/e2e/playwright-report/
