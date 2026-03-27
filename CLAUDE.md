@@ -59,6 +59,15 @@ tekmar-infrastructure/
 │   ├── .env.example                     ← Template: all required env vars with descriptions
 │   └── .env.development                 ← Development defaults (gitignored secrets)
 │
+├── tests/
+│   ├── backend/                         ← Backend integration tests (Python, httpx)
+│   │   └── ...                            Tests API + Pipeline + MCP without the frontend.
+│   │                                      Run with: cd tests/backend && uv run pytest
+│   └── e2e/                             ← End-to-end browser tests (Playwright)
+│       ├── testid-manifest.json           Contract between frontend and tests.
+│       └── ...                            Tests the full stack through the browser.
+│                                          Run with: cd tests/e2e && ./run-e2e.sh
+│
 └── scripts/
     └── setup.sh                         ← First-time setup: clone repos, install deps, start
 ```
@@ -153,6 +162,30 @@ a new developer. It should:
 
 The script should be idempotent — running it a second time should not
 break anything.
+
+---
+
+## Testing
+
+This repository hosts two test suites that verify the system across
+service boundaries.
+
+**Backend integration tests** (`tests/backend/`):
+Python-based tests using httpx and websockets that call the API and
+Pipeline Service endpoints directly, verifying the full backend flow
+without a browser. Run with `uv run pytest` from `tests/backend/`.
+Requires: database, API, and Pipeline Service running.
+
+**End-to-end tests** (`tests/e2e/`):
+Playwright browser tests that exercise the complete product through
+the Angular frontend. Every interaction uses `data-testid` selectors
+defined in the `testid-manifest.json` file, which is the contract
+between the frontend and these tests. When the frontend changes,
+the manifest is updated in `tekmar-interface/` and copied here.
+Run with `./run-e2e.sh` or `npx playwright test` from `tests/e2e/`.
+Requires: all services running (database, API, Pipeline, Angular dev
+server). Test credentials are stored in `tests/e2e/.env.test`
+(gitignored).
 
 ---
 
