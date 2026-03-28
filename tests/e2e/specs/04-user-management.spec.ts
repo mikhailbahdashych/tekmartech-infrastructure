@@ -21,10 +21,14 @@ test.describe('User Management', () => {
     await expect(page.getByTestId('user-invite-dialog')).toBeVisible({ timeout: 5_000 });
 
     await page.getByTestId('user-invite-email-input').fill(inviteEmail);
+    // Role defaults to "Member" — only interact if it shows a different value
     const roleSelect = page.getByTestId('user-invite-role-select');
     if (await roleSelect.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await roleSelect.click();
-      await page.locator('mat-option').filter({ hasText: /member/i }).click();
+      const currentRole = await roleSelect.textContent();
+      if (currentRole && !/member/i.test(currentRole)) {
+        await roleSelect.click();
+        await page.getByText('Member').first().click();
+      }
     }
 
     await page.getByTestId('user-invite-submit-button').click();

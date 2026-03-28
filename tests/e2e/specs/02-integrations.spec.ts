@@ -51,7 +51,7 @@ test.describe('Integration Management', () => {
     await page.getByTestId('integration-connect-aws-access-key-input').fill(config.awsAccessKeyId);
     await page.getByTestId('integration-connect-aws-secret-key-input').fill(config.awsSecretAccessKey);
     await page.getByTestId('integration-connect-aws-region-select').click();
-    await page.locator('mat-option').filter({ hasText: config.awsRegion }).click();
+    await page.getByText(config.awsRegion).first().click();
     await page.getByTestId('integration-connect-submit-button').click();
 
     await expect(page.getByTestId('integration-connect-dialog')).toBeHidden({ timeout: 30_000 });

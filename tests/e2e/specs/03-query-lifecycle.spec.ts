@@ -24,8 +24,9 @@ async function connectGitHub(page: import('@playwright/test').Page): Promise<voi
 
 /**
  * Submit a query and wait for the plan to appear.
- * Retries up to 3 times if the LLM produces an invalid plan
- * (hallucinated integration IDs, missing plan block, etc).
+ * Scrolls the plan into view once it appears (the interpretation text
+ * pushes the plan below the viewport).
+ * Retries up to 3 times if the LLM produces an invalid plan.
  */
 async function submitQueryAndWaitForPlan(
   page: import('@playwright/test').Page,
@@ -39,25 +40,36 @@ async function submitQueryAndWaitForPlan(
     await page.getByTestId('query-submit-button').click();
     await expect(page.getByTestId('query-interpretation-container')).toBeVisible({ timeout: 15_000 });
 
-    // Wait for either the plan or an interpretation failure
-    const outcome = await Promise.race([
-      page.getByTestId('query-plan-container').waitFor({ state: 'visible', timeout: 90_000 }).then(() => 'plan' as const),
-      page.getByTestId('query-interpretation-error-text').waitFor({ state: 'visible', timeout: 90_000 }).then(() => 'error' as const),
-      page.getByTestId('query-failed-error-text').waitFor({ state: 'visible', timeout: 90_000 }).then(() => 'failed' as const),
-    ]);
+    // Keep scrolling to the bottom while waiting — the plan container renders
+    // below the interpretation text which can be very long. Without scrolling,
+    // Playwright may not consider the element "visible" since it's off-screen.
+    const scrollInterval = setInterval(() => {
+      page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+    }, 2_000);
 
-    if (outcome === 'plan') return;
+    try {
+      const outcome = await Promise.race([
+        page.getByTestId('query-plan-container').waitFor({ state: 'attached', timeout: 90_000 }).then(() => 'plan' as const),
+        page.getByTestId('query-interpretation-error-text').waitFor({ state: 'attached', timeout: 90_000 }).then(() => 'error' as const),
+        page.getByTestId('query-failed-error-text').waitFor({ state: 'attached', timeout: 90_000 }).then(() => 'failed' as const),
+      ]);
+
+      if (outcome === 'plan') {
+        await page.getByTestId('query-plan-container').scrollIntoViewIfNeeded();
+        return;
+      }
+    } finally {
+      clearInterval(scrollInterval);
+    }
 
     // LLM produced invalid plan or no plan — retry if attempts remain
     if (attempt < maxAttempts) {
       console.log(`  LLM interpretation failed (attempt ${attempt}/${maxAttempts}), retrying...`);
-      // Hard navigate to /queries to fully reset the UI state
       await page.goto('/queries');
       await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
     }
   }
 
-  // All attempts exhausted
   throw new Error(`LLM failed to produce a valid plan after ${maxAttempts} attempts`);
 }
 
@@ -82,8 +94,11 @@ test.describe('Query Lifecycle', () => {
     await expect(interpretationText).toBeVisible({ timeout: 60_000 });
     await expect(interpretationText).not.toBeEmpty({ timeout: 60_000 });
 
-    // Plan should appear after interpretation completes
-    await expect(page.getByTestId('query-plan-container')).toBeVisible({ timeout: 90_000 });
+    // Plan should appear after interpretation completes — scroll it into view
+    const planContainer = page.getByTestId('query-plan-container');
+    await expect(planContainer).toBeVisible({ timeout: 90_000 });
+    await planContainer.scrollIntoViewIfNeeded();
+
     await expect(page.getByTestId('query-plan-summary-text')).not.toBeEmpty();
     await expect(page.getByTestId('query-plan-steps-list')).toBeVisible();
     await expect(page.getByTestId('query-plan-step-0')).toBeVisible();
@@ -92,8 +107,10 @@ test.describe('Query Lifecycle', () => {
     const toolName = await page.getByTestId('query-plan-step-tool-name-0').textContent();
     expect(toolName!.toLowerCase()).toContain('github');
 
-    // Both action buttons must be visible
-    await expect(page.getByTestId('query-plan-approve-button')).toBeVisible();
+    // Scroll to and verify action buttons
+    const approveBtn = page.getByTestId('query-plan-approve-button');
+    await approveBtn.scrollIntoViewIfNeeded();
+    await expect(approveBtn).toBeVisible();
     await expect(page.getByTestId('query-plan-reject-button')).toBeVisible();
   });
 
@@ -103,14 +120,18 @@ test.describe('Query Lifecycle', () => {
     await connectGitHub(page);
     await submitQueryAndWaitForPlan(page, 'List all repositories in our GitHub organization');
 
-    // Approve
-    await page.getByTestId('query-plan-approve-button').click();
+    // Scroll to and click approve
+    const approveBtn = page.getByTestId('query-plan-approve-button');
+    await approveBtn.scrollIntoViewIfNeeded();
+    await approveBtn.click();
 
     // Execution container should appear
     await expect(page.getByTestId('query-execution-container')).toBeVisible({ timeout: 15_000 });
 
     // Wait for results (real API calls — may take time)
-    await expect(page.getByTestId('query-results-container')).toBeVisible({ timeout: 120_000 });
+    const resultsContainer = page.getByTestId('query-results-container');
+    await expect(resultsContainer).toBeVisible({ timeout: 120_000 });
+    await resultsContainer.scrollIntoViewIfNeeded();
 
     // Verify results content
     await expect(page.getByTestId('query-results-summary-text')).not.toBeEmpty();
@@ -122,14 +143,18 @@ test.describe('Query Lifecycle', () => {
     await expect(page.getByTestId('query-results-table-0')).toBeVisible();
 
     // CSV download
+    const downloadBtn = page.getByTestId('query-results-download-csv-button');
+    await downloadBtn.scrollIntoViewIfNeeded();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByTestId('query-results-download-csv-button').click(),
+      downloadBtn.click(),
     ]);
     expect(download.suggestedFilename()).toContain('.csv');
 
     // Transparency log
-    await page.getByTestId('query-results-transparency-log-toggle').click();
+    const logToggle = page.getByTestId('query-results-transparency-log-toggle');
+    await logToggle.scrollIntoViewIfNeeded();
+    await logToggle.click();
     await expect(page.getByTestId('query-results-transparency-log-container')).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId('query-results-transparency-log-entry-0')).toBeVisible();
   });
@@ -141,7 +166,9 @@ test.describe('Query Lifecycle', () => {
     await submitQueryAndWaitForPlan(page, 'List all repositories in our GitHub organization');
 
     // Approve and wait for completion
-    await page.getByTestId('query-plan-approve-button').click();
+    const approveBtn = page.getByTestId('query-plan-approve-button');
+    await approveBtn.scrollIntoViewIfNeeded();
+    await approveBtn.click();
     await expect(page.getByTestId('query-results-container')).toBeVisible({ timeout: 120_000 });
 
     // Navigate to history
@@ -161,11 +188,13 @@ test.describe('Query Lifecycle', () => {
 
   test('reject a plan', async ({ authenticatedPage: page }) => {
     test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
-    test.setTimeout(120_000);
+    test.setTimeout(300_000);
     await connectGitHub(page);
     await submitQueryAndWaitForPlan(page, 'List all repositories in our GitHub organization');
 
-    await page.getByTestId('query-plan-reject-button').click();
+    const rejectBtn = page.getByTestId('query-plan-reject-button');
+    await rejectBtn.scrollIntoViewIfNeeded();
+    await rejectBtn.click();
     await expect(page.getByTestId('query-rejected-text')).toBeVisible({ timeout: 10_000 });
   });
 
@@ -186,7 +215,6 @@ test.describe('Query Lifecycle', () => {
       page.getByTestId('query-failed-error-text').waitFor({ state: 'visible', timeout: 60_000 }).then(() => 'failed'),
     ]);
 
-    // Any terminal state is valid — we're verifying the app handles it
     expect(['plan', 'interp-error', 'failed']).toContain(outcome);
   });
 });

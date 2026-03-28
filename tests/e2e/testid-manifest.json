@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "generated_at": "2026-03-27T00:00:00Z",
+  "version": "2.0.0",
+  "generated_at": "2026-03-28T00:00:00Z",
   "pages": {
     "login": {
       "route": "/login",
@@ -8,17 +8,17 @@
       "admin_only": false,
       "testids": {
         "login-email-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Email field on login form",
           "interactions": ["type", "clear"]
         },
         "login-password-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Password field on login form",
           "interactions": ["type", "clear"]
         },
         "login-submit-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Submit login form",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
@@ -39,12 +39,6 @@
           "element": "a",
           "purpose": "Link to registration page",
           "interactions": ["click"]
-        },
-        "login-loading-spinner": {
-          "element": "mat-spinner",
-          "purpose": "Loading spinner inside submit button",
-          "interactions": ["read"],
-          "visibility": "conditional"
         }
       }
     },
@@ -54,32 +48,32 @@
       "admin_only": false,
       "testids": {
         "register-org-name-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Organization name field",
           "interactions": ["type", "clear"]
         },
         "register-display-name-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Display name field",
           "interactions": ["type", "clear"]
         },
         "register-email-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Email field",
           "interactions": ["type", "clear"]
         },
         "register-password-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Password field",
           "interactions": ["type", "clear"]
         },
         "register-confirm-password-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Confirm password field",
           "interactions": ["type", "clear"]
         },
         "register-submit-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Submit registration form",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
@@ -94,12 +88,6 @@
           "element": "a",
           "purpose": "Link to login page",
           "interactions": ["click"]
-        },
-        "register-loading-spinner": {
-          "element": "mat-spinner",
-          "purpose": "Loading spinner inside submit button",
-          "interactions": ["read"],
-          "visibility": "conditional"
         }
       }
     },
@@ -109,34 +97,35 @@
       "admin_only": false,
       "testids": {
         "invitation-email-input": {
-          "element": "input",
-          "purpose": "Pre-filled readonly email field",
-          "interactions": ["read"]
+          "element": "div (readonly display)",
+          "purpose": "Pre-filled readonly email display",
+          "interactions": ["read"],
+          "visibility": "conditional"
         },
         "invitation-display-name-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Display name field",
           "interactions": ["type", "clear"]
         },
         "invitation-password-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Password field",
           "interactions": ["type", "clear"]
         },
         "invitation-confirm-password-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Confirm password field",
           "interactions": ["type", "clear"]
         },
         "invitation-submit-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Accept invitation and create account",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
         },
         "invitation-error-text": {
-          "element": "div",
-          "purpose": "Error message (invalid token, expired, already accepted)",
+          "element": "div/p",
+          "purpose": "Error message (invalid token, expired, already accepted, no token)",
           "interactions": ["read"],
           "visibility": "conditional"
         },
@@ -164,7 +153,7 @@
           "interactions": ["read"]
         },
         "sidebar-new-query-button": {
-          "element": "a",
+          "element": "button",
           "purpose": "Prominent New Query button at top of sidebar",
           "interactions": ["click"]
         },
@@ -208,7 +197,7 @@
           "interactions": ["read"]
         },
         "sidebar-user-role-badge": {
-          "element": "span",
+          "element": "tk-badge",
           "purpose": "Current user role badge (Admin/Member)",
           "interactions": ["read"]
         },
@@ -225,21 +214,15 @@
       "admin_only": false,
       "testids": {
         "query-input-textarea": {
-          "element": "textarea",
+          "element": "textarea (via tk-textarea)",
           "purpose": "Main query text input area",
           "interactions": ["type", "clear"]
         },
         "query-submit-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Submit/run query button",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
-        },
-        "query-submit-loading-spinner": {
-          "element": "mat-spinner",
-          "purpose": "Loading spinner after query submission",
-          "interactions": ["read"],
-          "visibility": "conditional"
         },
         "query-interpretation-container": {
           "element": "div",
@@ -307,13 +290,13 @@
           "visibility": "conditional"
         },
         "query-plan-approve-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Approve and execute the query plan",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
         },
         "query-plan-reject-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Reject the query plan",
           "interactions": ["click"],
           "states": ["enabled", "disabled"]
@@ -337,7 +320,7 @@
         },
         "query-execution-step-status-{index}": {
           "element": "div",
-          "purpose": "Status icon (spinner/checkmark/X) for execution step",
+          "purpose": "Status icon container (spinner/checkmark/X) for execution step",
           "interactions": ["read"],
           "dynamic": true
         },
@@ -397,12 +380,12 @@
         },
         "query-results-table-{index}": {
           "element": "div",
-          "purpose": "Result data table (0-based index)",
+          "purpose": "Result data table wrapper (0-based index)",
           "interactions": ["read"],
           "dynamic": true
         },
         "query-results-download-csv-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Download results as CSV file",
           "interactions": ["click"]
         },
@@ -430,7 +413,7 @@
           "visibility": "conditional"
         },
         "query-failed-new-query-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "New Query button shown after failure",
           "interactions": ["click"],
           "visibility": "conditional"
@@ -460,13 +443,13 @@
           "dynamic": true
         },
         "query-history-status-filter": {
-          "element": "mat-select",
+          "element": "button (via tk-select)",
           "purpose": "Status filter dropdown",
-          "interactions": ["select"]
+          "interactions": ["click", "select"]
         },
         "query-history-pagination": {
           "element": "div",
-          "purpose": "Pagination controls container",
+          "purpose": "Server-side pagination controls (Load more)",
           "interactions": ["read", "click"],
           "visibility": "conditional"
         }
@@ -483,9 +466,21 @@
           "interactions": ["read"]
         },
         "query-detail-status-badge": {
-          "element": "app-status-badge",
+          "element": "tk-badge",
           "purpose": "Current query status badge",
           "interactions": ["read"]
+        },
+        "query-failed-error-text": {
+          "element": "p",
+          "purpose": "Error message when query failed (detail view)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-rejected-text": {
+          "element": "span",
+          "purpose": "Rejection text (detail view)",
+          "interactions": ["read"],
+          "visibility": "conditional"
         }
       }
     },
@@ -500,24 +495,18 @@
           "interactions": ["read"]
         },
         "integration-connect-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Connect Integration header button",
           "interactions": ["click"]
         },
         "integration-empty-state": {
-          "element": "div",
+          "element": "tk-empty-state",
           "purpose": "Empty state when no integrations exist",
           "interactions": ["read"],
           "visibility": "conditional"
         },
-        "integration-empty-state-connect-button": {
-          "element": "button",
-          "purpose": "Connect Integration button in empty state",
-          "interactions": ["click"],
-          "visibility": "conditional"
-        },
         "integration-card-{id}": {
-          "element": "div",
+          "element": "tk-card",
           "purpose": "Individual integration card (dynamic, by UUID)",
           "interactions": ["read"],
           "dynamic": true
@@ -529,33 +518,33 @@
           "dynamic": true
         },
         "integration-card-type-{id}": {
-          "element": "span",
+          "element": "div",
           "purpose": "Integration type label on card",
           "interactions": ["read"],
           "dynamic": true
         },
         "integration-card-status-badge-{id}": {
-          "element": "app-status-badge",
+          "element": "tk-badge",
           "purpose": "Integration status badge on card",
           "interactions": ["read"],
           "dynamic": true
         },
         "integration-card-health-badge-{id}": {
-          "element": "app-status-badge",
+          "element": "tk-badge",
           "purpose": "Health check status badge on card",
           "interactions": ["read"],
           "dynamic": true,
           "visibility": "conditional"
         },
         "integration-card-test-button-{id}": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Test connection button on card",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"],
           "dynamic": true
         },
         "integration-card-disconnect-button-{id}": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Disconnect button on card",
           "interactions": ["click"],
           "dynamic": true
@@ -588,54 +577,54 @@
           "interactions": ["click"]
         },
         "integration-connect-display-name-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Display name field (shared across all types)",
           "interactions": ["type", "clear"]
         },
         "integration-connect-aws-access-key-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "AWS Access Key ID field",
           "interactions": ["type", "clear"],
           "visibility": "conditional"
         },
         "integration-connect-aws-secret-key-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "AWS Secret Access Key field",
           "interactions": ["type", "clear"],
           "visibility": "conditional"
         },
         "integration-connect-aws-region-select": {
-          "element": "mat-select",
+          "element": "button (via tk-select)",
           "purpose": "AWS region dropdown",
-          "interactions": ["select"],
+          "interactions": ["click", "select"],
           "visibility": "conditional"
         },
         "integration-connect-github-pat-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "GitHub Personal Access Token field",
           "interactions": ["type", "clear"],
           "visibility": "conditional"
         },
         "integration-connect-github-org-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "GitHub organization name field",
           "interactions": ["type", "clear"],
           "visibility": "conditional"
         },
         "integration-connect-google-json-textarea": {
-          "element": "textarea",
+          "element": "textarea (via tk-textarea)",
           "purpose": "Google Workspace service account JSON field",
           "interactions": ["type", "clear"],
           "visibility": "conditional"
         },
         "integration-connect-google-email-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Google Workspace delegated email field",
           "interactions": ["type", "clear"],
           "visibility": "conditional"
         },
         "integration-connect-submit-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Submit connect integration form",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
@@ -648,12 +637,6 @@
         "integration-connect-error-text": {
           "element": "div",
           "purpose": "Error message in connect dialog",
-          "interactions": ["read"],
-          "visibility": "conditional"
-        },
-        "integration-connect-loading-spinner": {
-          "element": "mat-spinner",
-          "purpose": "Loading spinner on submit button",
           "interactions": ["read"],
           "visibility": "conditional"
         }
@@ -670,13 +653,13 @@
           "interactions": ["read"]
         },
         "integration-disconnect-confirm-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Confirm disconnect action",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
         },
         "integration-disconnect-cancel-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Cancel disconnect action",
           "interactions": ["click"]
         }
@@ -693,7 +676,7 @@
           "interactions": ["read"]
         },
         "user-invite-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Invite User header button",
           "interactions": ["click"]
         },
@@ -721,13 +704,13 @@
           "dynamic": true
         },
         "user-row-role-badge-{id}": {
-          "element": "app-status-badge",
+          "element": "tk-badge",
           "purpose": "User role badge (Admin/Member)",
           "interactions": ["read"],
           "dynamic": true
         },
         "user-row-status-badge-{id}": {
-          "element": "app-status-badge",
+          "element": "tk-badge",
           "purpose": "User status badge (Active/Disabled)",
           "interactions": ["read"],
           "dynamic": true
@@ -739,13 +722,13 @@
           "dynamic": true
         },
         "user-row-change-role-{id}": {
-          "element": "button",
+          "element": "button (mat-menu-item)",
           "purpose": "Change role menu item",
           "interactions": ["click"],
           "dynamic": true
         },
         "user-row-remove-{id}": {
-          "element": "button",
+          "element": "button (mat-menu-item)",
           "purpose": "Remove user menu item",
           "interactions": ["click"],
           "dynamic": true,
@@ -769,13 +752,13 @@
           "dynamic": true
         },
         "invitation-row-status-badge-{id}": {
-          "element": "app-status-badge",
+          "element": "tk-badge",
           "purpose": "Invitation status badge",
           "interactions": ["read"],
           "dynamic": true
         },
         "invitation-row-revoke-{id}": {
-          "element": "button",
+          "element": "button (mat-menu-item)",
           "purpose": "Revoke invitation menu item",
           "interactions": ["click"],
           "dynamic": true,
@@ -794,17 +777,17 @@
           "interactions": ["read"]
         },
         "user-invite-email-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Email field in invite dialog",
           "interactions": ["type", "clear"]
         },
         "user-invite-role-select": {
-          "element": "mat-select",
+          "element": "button (via tk-select)",
           "purpose": "Role dropdown in invite dialog",
-          "interactions": ["select"]
+          "interactions": ["click", "select"]
         },
         "user-invite-submit-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Send invitation button",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
@@ -828,12 +811,12 @@
           "interactions": ["read"]
         },
         "user-role-change-confirm-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Confirm role change",
           "interactions": ["click"]
         },
         "user-role-change-cancel-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Cancel role change",
           "interactions": ["click"]
         }
@@ -850,12 +833,12 @@
           "interactions": ["read"]
         },
         "user-remove-confirm-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Confirm user removal",
           "interactions": ["click"]
         },
         "user-remove-cancel-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Cancel user removal",
           "interactions": ["click"]
         }
@@ -872,18 +855,18 @@
           "interactions": ["read"]
         },
         "settings-org-name-input": {
-          "element": "input",
+          "element": "input (via tk-input)",
           "purpose": "Organization name edit field",
           "interactions": ["type", "clear"]
         },
         "settings-org-name-save-button": {
-          "element": "button",
+          "element": "tk-button",
           "purpose": "Save/update organization name",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
         },
         "settings-subscription-badge": {
-          "element": "span",
+          "element": "tk-badge",
           "purpose": "Subscription tier display badge",
           "interactions": ["read"]
         },
@@ -920,14 +903,14 @@
           "interactions": ["read"]
         },
         "activity-log-action-filter": {
-          "element": "mat-select",
+          "element": "button (via tk-select)",
           "purpose": "Action type filter dropdown",
-          "interactions": ["select"]
+          "interactions": ["click", "select"]
         },
         "activity-log-user-filter": {
-          "element": "mat-select",
+          "element": "button (via tk-select)",
           "purpose": "User filter dropdown",
-          "interactions": ["select"]
+          "interactions": ["click", "select"]
         },
         "activity-log-row-{index}": {
           "element": "tr",
@@ -955,7 +938,7 @@
         },
         "activity-log-pagination": {
           "element": "div",
-          "purpose": "Pagination controls",
+          "purpose": "Server-side pagination controls (Load more)",
           "interactions": ["read", "click"],
           "visibility": "conditional"
         }

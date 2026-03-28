@@ -22,9 +22,8 @@ test.describe.serial('Activity Logs', () => {
     // Open filter and select an action
     const filter = page.getByTestId('activity-log-action-filter');
     await filter.click();
-    // Pick "user_registered" or whichever option is available
-    const option = page.locator('mat-option').first();
-    await option.click();
+    // tk-select opens inline — options are text items within the component
+    await page.getByText('User Registered').first().click();
 
     // Wait for table to refresh
     await page.waitForTimeout(1500);
@@ -41,8 +40,7 @@ test.describe.serial('Activity Logs', () => {
     const userFilter = page.getByTestId('activity-log-user-filter');
     if (await userFilter.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await userFilter.click();
-      const option = page.locator('mat-option').first();
-      await option.click();
+      await page.getByText('E2E Test Admin').first().click();
       await page.waitForTimeout(1500);
       await expect(page.getByTestId('activity-log-table')).toBeVisible();
     }
