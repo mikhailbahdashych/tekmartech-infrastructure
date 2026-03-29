@@ -1,0 +1,961 @@
+{
+  "version": "2.0.0",
+  "generated_at": "2026-03-28T00:00:00Z",
+  "pages": {
+    "login": {
+      "route": "/login",
+      "auth_required": false,
+      "admin_only": false,
+      "testids": {
+        "login-email-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Email field on login form",
+          "interactions": ["type", "clear"]
+        },
+        "login-password-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Password field on login form",
+          "interactions": ["type", "clear"]
+        },
+        "login-submit-button": {
+          "element": "tk-button",
+          "purpose": "Submit login form",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "login-error-text": {
+          "element": "div",
+          "purpose": "Error message shown on failed login",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "login-invitation-pending-text": {
+          "element": "div",
+          "purpose": "Blue info message when user has a pending invitation",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "login-register-link": {
+          "element": "a",
+          "purpose": "Link to registration page",
+          "interactions": ["click"]
+        }
+      }
+    },
+    "register": {
+      "route": "/register",
+      "auth_required": false,
+      "admin_only": false,
+      "testids": {
+        "register-org-name-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Organization name field",
+          "interactions": ["type", "clear"]
+        },
+        "register-display-name-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Display name field",
+          "interactions": ["type", "clear"]
+        },
+        "register-email-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Email field",
+          "interactions": ["type", "clear"]
+        },
+        "register-password-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Password field",
+          "interactions": ["type", "clear"]
+        },
+        "register-confirm-password-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Confirm password field",
+          "interactions": ["type", "clear"]
+        },
+        "register-submit-button": {
+          "element": "tk-button",
+          "purpose": "Submit registration form",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "register-error-text": {
+          "element": "div",
+          "purpose": "Error message on failed registration",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "register-login-link": {
+          "element": "a",
+          "purpose": "Link to login page",
+          "interactions": ["click"]
+        }
+      }
+    },
+    "invitation-accept": {
+      "route": "/invitations/accept",
+      "auth_required": false,
+      "admin_only": false,
+      "testids": {
+        "invitation-email-input": {
+          "element": "div (readonly display)",
+          "purpose": "Pre-filled readonly email display",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "invitation-display-name-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Display name field",
+          "interactions": ["type", "clear"]
+        },
+        "invitation-password-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Password field",
+          "interactions": ["type", "clear"]
+        },
+        "invitation-confirm-password-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Confirm password field",
+          "interactions": ["type", "clear"]
+        },
+        "invitation-submit-button": {
+          "element": "tk-button",
+          "purpose": "Accept invitation and create account",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "invitation-error-text": {
+          "element": "div/p",
+          "purpose": "Error message (invalid token, expired, already accepted, no token)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "invitation-login-link": {
+          "element": "a",
+          "purpose": "Link to login page (shown on already-accepted error or no-token state)",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "sidebar": {
+      "route": "*",
+      "auth_required": true,
+      "admin_only": false,
+      "testids": {
+        "sidebar-container": {
+          "element": "aside",
+          "purpose": "The sidebar navigation container",
+          "interactions": ["read"]
+        },
+        "sidebar-brand-text": {
+          "element": "span",
+          "purpose": "Tekmar brand text in sidebar header",
+          "interactions": ["read"]
+        },
+        "sidebar-new-query-button": {
+          "element": "button",
+          "purpose": "Prominent New Query button at top of sidebar",
+          "interactions": ["click"]
+        },
+        "sidebar-nav-queries": {
+          "element": "a",
+          "purpose": "Queries navigation link",
+          "interactions": ["click"]
+        },
+        "sidebar-nav-history": {
+          "element": "a",
+          "purpose": "Query History navigation link",
+          "interactions": ["click"]
+        },
+        "sidebar-nav-integrations": {
+          "element": "a",
+          "purpose": "Integrations navigation link (admin only)",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        },
+        "sidebar-nav-team": {
+          "element": "a",
+          "purpose": "Team management navigation link (admin only)",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        },
+        "sidebar-nav-activity-log": {
+          "element": "a",
+          "purpose": "Activity Log navigation link (admin only)",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        },
+        "sidebar-nav-settings": {
+          "element": "a",
+          "purpose": "Settings navigation link (admin only)",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        },
+        "sidebar-user-name": {
+          "element": "div",
+          "purpose": "Current user display name",
+          "interactions": ["read"]
+        },
+        "sidebar-user-role-badge": {
+          "element": "tk-badge",
+          "purpose": "Current user role badge (Admin/Member)",
+          "interactions": ["read"]
+        },
+        "sidebar-logout-button": {
+          "element": "button",
+          "purpose": "Logout button",
+          "interactions": ["click"]
+        }
+      }
+    },
+    "query-page": {
+      "route": "/queries",
+      "auth_required": true,
+      "admin_only": false,
+      "testids": {
+        "query-input-textarea": {
+          "element": "textarea (via tk-textarea)",
+          "purpose": "Main query text input area",
+          "interactions": ["type", "clear"]
+        },
+        "query-submit-button": {
+          "element": "tk-button",
+          "purpose": "Submit/run query button",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "query-interpretation-container": {
+          "element": "div",
+          "purpose": "AI analysis streaming text container",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-interpretation-text": {
+          "element": "div",
+          "purpose": "Accumulated AI analysis text",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-interpretation-cursor": {
+          "element": "span",
+          "purpose": "Blinking cursor indicating streaming in progress",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-interpretation-error-text": {
+          "element": "div",
+          "purpose": "Error message if interpretation fails",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-plan-container": {
+          "element": "div",
+          "purpose": "Plan approval section",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-plan-summary-text": {
+          "element": "p",
+          "purpose": "Plan summary text",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-plan-steps-list": {
+          "element": "div",
+          "purpose": "Container for list of plan steps",
+          "interactions": ["read"]
+        },
+        "query-plan-step-{index}": {
+          "element": "div",
+          "purpose": "Individual plan step (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-plan-step-description-{index}": {
+          "element": "div",
+          "purpose": "Step description text",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-plan-step-tool-name-{index}": {
+          "element": "span",
+          "purpose": "Tool name within a plan step",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-plan-estimated-duration": {
+          "element": "span",
+          "purpose": "Estimated execution duration",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-plan-approve-button": {
+          "element": "tk-button",
+          "purpose": "Approve and execute the query plan",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "query-plan-reject-button": {
+          "element": "tk-button",
+          "purpose": "Reject the query plan",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled"]
+        },
+        "query-execution-container": {
+          "element": "div",
+          "purpose": "Live execution log container",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-execution-progress-text": {
+          "element": "div",
+          "purpose": "Step X of Y progress indicator",
+          "interactions": ["read"]
+        },
+        "query-execution-step-{index}": {
+          "element": "div",
+          "purpose": "Individual execution step entry (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-execution-step-status-{index}": {
+          "element": "div",
+          "purpose": "Status icon container (spinner/checkmark/X) for execution step",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-execution-step-tool-name-{index}": {
+          "element": "span",
+          "purpose": "Tool display name for execution step",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-execution-step-duration-{index}": {
+          "element": "span",
+          "purpose": "Duration for completed execution step",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "query-execution-step-summary-{index}": {
+          "element": "div",
+          "purpose": "Summary text for completed execution step",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "query-execution-step-error-{index}": {
+          "element": "div",
+          "purpose": "Error message for failed execution step",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "query-results-container": {
+          "element": "div",
+          "purpose": "Results section containing summary and tables",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-results-summary-text": {
+          "element": "p",
+          "purpose": "Result summary text",
+          "interactions": ["read"]
+        },
+        "query-results-total-records": {
+          "element": "span",
+          "purpose": "Total records count",
+          "interactions": ["read"]
+        },
+        "query-results-duration": {
+          "element": "span",
+          "purpose": "Execution duration",
+          "interactions": ["read"]
+        },
+        "query-results-partial-warning": {
+          "element": "div",
+          "purpose": "Warning banner for partial results",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-results-table-{index}": {
+          "element": "div",
+          "purpose": "Result data table wrapper (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-results-download-csv-button": {
+          "element": "tk-button",
+          "purpose": "Download results as CSV file",
+          "interactions": ["click"]
+        },
+        "query-results-transparency-log-toggle": {
+          "element": "button",
+          "purpose": "Expand/collapse transparency log section",
+          "interactions": ["click"]
+        },
+        "query-results-transparency-log-container": {
+          "element": "div",
+          "purpose": "Expanded transparency log content",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-results-transparency-log-entry-{index}": {
+          "element": "div",
+          "purpose": "Individual transparency log entry (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "query-failed-error-text": {
+          "element": "p",
+          "purpose": "Error message when query fails",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-failed-new-query-button": {
+          "element": "tk-button",
+          "purpose": "New Query button shown after failure",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        },
+        "query-rejected-text": {
+          "element": "span",
+          "purpose": "Rejection confirmation text",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "query-history": {
+      "route": "/queries/history",
+      "auth_required": true,
+      "admin_only": false,
+      "testids": {
+        "query-history-table": {
+          "element": "table",
+          "purpose": "Query history table",
+          "interactions": ["read"]
+        },
+        "query-history-row-{id}": {
+          "element": "tr",
+          "purpose": "Individual query row (dynamic, by query UUID)",
+          "interactions": ["click"],
+          "dynamic": true
+        },
+        "query-history-status-filter": {
+          "element": "button (via tk-select)",
+          "purpose": "Status filter dropdown",
+          "interactions": ["click", "select"]
+        },
+        "query-history-pagination": {
+          "element": "div",
+          "purpose": "Server-side pagination controls (Load more)",
+          "interactions": ["read", "click"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "query-detail": {
+      "route": "/queries/:id",
+      "auth_required": true,
+      "admin_only": false,
+      "testids": {
+        "query-detail-container": {
+          "element": "div",
+          "purpose": "Query detail page container",
+          "interactions": ["read"]
+        },
+        "query-detail-status-badge": {
+          "element": "tk-badge",
+          "purpose": "Current query status badge",
+          "interactions": ["read"]
+        },
+        "query-failed-error-text": {
+          "element": "p",
+          "purpose": "Error message when query failed (detail view)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-rejected-text": {
+          "element": "span",
+          "purpose": "Rejection text (detail view)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "integrations": {
+      "route": "/integrations",
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "integration-list-container": {
+          "element": "div",
+          "purpose": "Integration list page container",
+          "interactions": ["read"]
+        },
+        "integration-connect-button": {
+          "element": "tk-button",
+          "purpose": "Connect Integration header button",
+          "interactions": ["click"]
+        },
+        "integration-empty-state": {
+          "element": "tk-empty-state",
+          "purpose": "Empty state when no integrations exist",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "integration-card-{id}": {
+          "element": "tk-card",
+          "purpose": "Individual integration card (dynamic, by UUID)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "integration-card-name-{id}": {
+          "element": "h3",
+          "purpose": "Integration display name on card",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "integration-card-type-{id}": {
+          "element": "div",
+          "purpose": "Integration type label on card",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "integration-card-status-badge-{id}": {
+          "element": "tk-badge",
+          "purpose": "Integration status badge on card",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "integration-card-health-badge-{id}": {
+          "element": "tk-badge",
+          "purpose": "Health check status badge on card",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "integration-card-test-button-{id}": {
+          "element": "tk-button",
+          "purpose": "Test connection button on card",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"],
+          "dynamic": true
+        },
+        "integration-card-disconnect-button-{id}": {
+          "element": "tk-button",
+          "purpose": "Disconnect button on card",
+          "interactions": ["click"],
+          "dynamic": true
+        }
+      }
+    },
+    "integration-connect-dialog": {
+      "route": null,
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "integration-connect-dialog": {
+          "element": "div",
+          "purpose": "Connect integration dialog container",
+          "interactions": ["read"]
+        },
+        "integration-type-card-aws": {
+          "element": "button",
+          "purpose": "AWS type selection card",
+          "interactions": ["click"]
+        },
+        "integration-type-card-github": {
+          "element": "button",
+          "purpose": "GitHub type selection card",
+          "interactions": ["click"]
+        },
+        "integration-type-card-google-workspace": {
+          "element": "button",
+          "purpose": "Google Workspace type selection card",
+          "interactions": ["click"]
+        },
+        "integration-connect-display-name-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Display name field (shared across all types)",
+          "interactions": ["type", "clear"]
+        },
+        "integration-connect-aws-access-key-input": {
+          "element": "input (via tk-input)",
+          "purpose": "AWS Access Key ID field",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-connect-aws-secret-key-input": {
+          "element": "input (via tk-input)",
+          "purpose": "AWS Secret Access Key field",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-connect-aws-region-select": {
+          "element": "button (via tk-select)",
+          "purpose": "AWS region dropdown",
+          "interactions": ["click", "select"],
+          "visibility": "conditional"
+        },
+        "integration-connect-github-pat-input": {
+          "element": "input (via tk-input)",
+          "purpose": "GitHub Personal Access Token field",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-connect-github-org-input": {
+          "element": "input (via tk-input)",
+          "purpose": "GitHub organization name field",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-connect-google-json-textarea": {
+          "element": "textarea (via tk-textarea)",
+          "purpose": "Google Workspace service account JSON field",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-connect-google-email-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Google Workspace delegated email field",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-connect-submit-button": {
+          "element": "tk-button",
+          "purpose": "Submit connect integration form",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "integration-connect-back-button": {
+          "element": "button",
+          "purpose": "Back to type selection step",
+          "interactions": ["click"]
+        },
+        "integration-connect-error-text": {
+          "element": "div",
+          "purpose": "Error message in connect dialog",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "integration-disconnect-dialog": {
+      "route": null,
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "integration-disconnect-dialog": {
+          "element": "div",
+          "purpose": "Disconnect confirmation dialog container",
+          "interactions": ["read"]
+        },
+        "integration-disconnect-confirm-button": {
+          "element": "tk-button",
+          "purpose": "Confirm disconnect action",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "integration-disconnect-cancel-button": {
+          "element": "tk-button",
+          "purpose": "Cancel disconnect action",
+          "interactions": ["click"]
+        }
+      }
+    },
+    "users": {
+      "route": "/users",
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "user-list-container": {
+          "element": "div",
+          "purpose": "User management page container",
+          "interactions": ["read"]
+        },
+        "user-invite-button": {
+          "element": "tk-button",
+          "purpose": "Invite User header button",
+          "interactions": ["click"]
+        },
+        "user-table": {
+          "element": "table",
+          "purpose": "Team members table",
+          "interactions": ["read"]
+        },
+        "user-row-{id}": {
+          "element": "tr",
+          "purpose": "Individual user row (dynamic, by user UUID)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "user-row-name-{id}": {
+          "element": "td",
+          "purpose": "User display name in row",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "user-row-email-{id}": {
+          "element": "td",
+          "purpose": "User email in row",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "user-row-role-badge-{id}": {
+          "element": "tk-badge",
+          "purpose": "User role badge (Admin/Member)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "user-row-status-badge-{id}": {
+          "element": "tk-badge",
+          "purpose": "User status badge (Active/Disabled)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "user-row-actions-menu-{id}": {
+          "element": "button",
+          "purpose": "Actions dropdown trigger for user row",
+          "interactions": ["click"],
+          "dynamic": true
+        },
+        "user-row-change-role-{id}": {
+          "element": "button (mat-menu-item)",
+          "purpose": "Change role menu item",
+          "interactions": ["click"],
+          "dynamic": true
+        },
+        "user-row-remove-{id}": {
+          "element": "button (mat-menu-item)",
+          "purpose": "Remove user menu item",
+          "interactions": ["click"],
+          "dynamic": true,
+          "states": ["enabled", "disabled"]
+        },
+        "invitation-table": {
+          "element": "table",
+          "purpose": "Pending invitations table",
+          "interactions": ["read"]
+        },
+        "invitation-row-{id}": {
+          "element": "tr",
+          "purpose": "Individual invitation row (dynamic, by invitation UUID)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "invitation-row-email-{id}": {
+          "element": "td",
+          "purpose": "Invited email in row",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "invitation-row-status-badge-{id}": {
+          "element": "tk-badge",
+          "purpose": "Invitation status badge",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "invitation-row-revoke-{id}": {
+          "element": "button (mat-menu-item)",
+          "purpose": "Revoke invitation menu item",
+          "interactions": ["click"],
+          "dynamic": true,
+          "visibility": "conditional"
+        }
+      }
+    },
+    "user-invite-dialog": {
+      "route": null,
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "user-invite-dialog": {
+          "element": "div",
+          "purpose": "Invite user dialog container",
+          "interactions": ["read"]
+        },
+        "user-invite-email-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Email field in invite dialog",
+          "interactions": ["type", "clear"]
+        },
+        "user-invite-role-select": {
+          "element": "button (via tk-select)",
+          "purpose": "Role dropdown in invite dialog",
+          "interactions": ["click", "select"]
+        },
+        "user-invite-submit-button": {
+          "element": "tk-button",
+          "purpose": "Send invitation button",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "user-invite-error-text": {
+          "element": "div",
+          "purpose": "Error message in invite dialog",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "user-role-change-dialog": {
+      "route": null,
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "user-role-change-dialog": {
+          "element": "div",
+          "purpose": "Role change confirmation dialog",
+          "interactions": ["read"]
+        },
+        "user-role-change-confirm-button": {
+          "element": "tk-button",
+          "purpose": "Confirm role change",
+          "interactions": ["click"]
+        },
+        "user-role-change-cancel-button": {
+          "element": "tk-button",
+          "purpose": "Cancel role change",
+          "interactions": ["click"]
+        }
+      }
+    },
+    "user-remove-dialog": {
+      "route": null,
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "user-remove-dialog": {
+          "element": "div",
+          "purpose": "Remove user confirmation dialog",
+          "interactions": ["read"]
+        },
+        "user-remove-confirm-button": {
+          "element": "tk-button",
+          "purpose": "Confirm user removal",
+          "interactions": ["click"]
+        },
+        "user-remove-cancel-button": {
+          "element": "tk-button",
+          "purpose": "Cancel user removal",
+          "interactions": ["click"]
+        }
+      }
+    },
+    "settings": {
+      "route": "/settings",
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "settings-container": {
+          "element": "div",
+          "purpose": "Settings page container",
+          "interactions": ["read"]
+        },
+        "settings-org-name-input": {
+          "element": "input (via tk-input)",
+          "purpose": "Organization name edit field",
+          "interactions": ["type", "clear"]
+        },
+        "settings-org-name-save-button": {
+          "element": "tk-button",
+          "purpose": "Save/update organization name",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"]
+        },
+        "settings-subscription-badge": {
+          "element": "tk-badge",
+          "purpose": "Subscription tier display badge",
+          "interactions": ["read"]
+        },
+        "settings-org-id-text": {
+          "element": "code",
+          "purpose": "Organization ID display (monospace)",
+          "interactions": ["read"]
+        },
+        "settings-org-id-copy-button": {
+          "element": "button",
+          "purpose": "Copy organization ID to clipboard",
+          "interactions": ["click"]
+        },
+        "settings-created-at-text": {
+          "element": "span",
+          "purpose": "Organization creation date",
+          "interactions": ["read"]
+        }
+      }
+    },
+    "activity-logs": {
+      "route": "/activity-logs",
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "activity-log-container": {
+          "element": "div",
+          "purpose": "Activity log page container",
+          "interactions": ["read"]
+        },
+        "activity-log-table": {
+          "element": "table",
+          "purpose": "Activity log table",
+          "interactions": ["read"]
+        },
+        "activity-log-action-filter": {
+          "element": "button (via tk-select)",
+          "purpose": "Action type filter dropdown",
+          "interactions": ["click", "select"]
+        },
+        "activity-log-user-filter": {
+          "element": "button (via tk-select)",
+          "purpose": "User filter dropdown",
+          "interactions": ["click", "select"]
+        },
+        "activity-log-row-{index}": {
+          "element": "tr",
+          "purpose": "Individual activity log row (dynamic, by index)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "activity-log-row-timestamp-{index}": {
+          "element": "td",
+          "purpose": "Timestamp for activity log entry",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "activity-log-row-user-{index}": {
+          "element": "td",
+          "purpose": "User info (name + email) for activity log entry",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "activity-log-row-action-{index}": {
+          "element": "td",
+          "purpose": "Human-readable action description",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "activity-log-pagination": {
+          "element": "div",
+          "purpose": "Server-side pagination controls (Load more)",
+          "interactions": ["read", "click"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "global": {
+      "route": "*",
+      "auth_required": false,
+      "admin_only": false,
+      "testids": {
+        "app-initializing-spinner": {
+          "element": "div",
+          "purpose": "Loading spinner shown during initial silent refresh on app startup",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        }
+      }
+    }
+  }
+}
