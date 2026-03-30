@@ -194,6 +194,34 @@ test.describe('Query Lifecycle', () => {
     await expect(page.getByTestId('query-detail-container')).toBeVisible({ timeout: 10_000 });
   });
 
+  test('query history search and filters', async ({ authenticatedPage: page }) => {
+    test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
+
+    await page.getByTestId('sidebar-nav-history').click();
+    await page.waitForURL('**/queries/history**');
+    await expect(page.getByTestId('query-history-table')).toBeVisible({ timeout: 10_000 });
+
+    // Search by query text
+    const searchInput = page.getByTestId('tk-search-input-queries');
+    await searchInput.fill('repositories');
+    await page.waitForTimeout(1500);
+    await expect(page.getByTestId('query-history-table')).toBeVisible();
+    // Verify URL contains search param
+    expect(page.url()).toContain('search=repositories');
+
+    // Clear search
+    await searchInput.clear();
+    await page.waitForTimeout(1000);
+
+    // Filter by status using multi-select
+    await page.getByTestId('tk-multi-select-trigger-query-status').click();
+    await expect(page.getByTestId('tk-multi-select-panel-query-status')).toBeVisible({ timeout: 5_000 });
+    await page.getByTestId('tk-multi-select-option-completed').click();
+    await page.getByTestId('tk-multi-select-trigger-query-status').click();
+    await page.waitForTimeout(1500);
+    expect(page.url()).toContain('status=completed');
+  });
+
   test('reject a plan', async ({ authenticatedPage: page }) => {
     test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
     test.setTimeout(300_000);
