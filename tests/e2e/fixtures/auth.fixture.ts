@@ -74,7 +74,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await page.getByTestId('login-email-input').fill(sharedCredentials.email);
     await page.getByTestId('login-password-input').fill(sharedCredentials.password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
     await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
     await use(page);
   },

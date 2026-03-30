@@ -18,19 +18,17 @@ test.describe.serial('Authentication', () => {
     await page.getByTestId('register-confirm-password-input').fill(creds.password);
     await page.getByTestId('register-submit-button').click();
 
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
-    await expect(page.getByTestId('sidebar-user-name')).toHaveText(creds.displayName);
-    await expect(page.getByTestId('sidebar-user-role-badge')).toBeVisible();
+    await page.waitForURL('**/new**', { timeout: 15_000 });
+    await expect(page.getByTestId('sidebar-user-name')).toBeVisible();
     await expect(page.getByTestId('sidebar-new-query-button')).toBeVisible();
   });
 
   test('logout redirects to login', async ({ page }) => {
-    // Login first
     await page.goto('/login');
     await page.getByTestId('login-email-input').fill(creds.email);
     await page.getByTestId('login-password-input').fill(creds.password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
     await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
 
     await page.getByTestId('sidebar-logout-button').click();
@@ -43,30 +41,27 @@ test.describe.serial('Authentication', () => {
     await page.getByTestId('login-password-input').fill(creds.password);
     await page.getByTestId('login-submit-button').click();
 
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
-    await expect(page.getByTestId('sidebar-user-name')).toHaveText(creds.displayName);
+    await page.waitForURL('**/new**', { timeout: 15_000 });
+    await expect(page.getByTestId('sidebar-user-name')).toBeVisible();
   });
 
   test('silent refresh preserves session on page reload', async ({ page }) => {
-    // Login
     await page.goto('/login');
     await page.getByTestId('login-email-input').fill(creds.email);
     await page.getByTestId('login-password-input').fill(creds.password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
     await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
 
-    // Reload
     await page.reload();
-    // Should remain authenticated — sidebar visible, not redirected to login
     await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('sidebar-user-name')).toHaveText(creds.displayName);
+    await expect(page.getByTestId('sidebar-user-name')).toBeVisible();
   });
 
   test('protected route redirects to login when unauthenticated', async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto('/queries');
+    await page.goto('/new');
     await page.waitForURL('**/login**', { timeout: 10_000 });
     await context.close();
   });

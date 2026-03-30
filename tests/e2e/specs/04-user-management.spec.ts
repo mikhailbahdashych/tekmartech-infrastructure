@@ -72,7 +72,7 @@ test.describe('User Management', () => {
     await acceptPage.getByTestId('invitation-password-input').fill(config.secondUserPassword);
     await acceptPage.getByTestId('invitation-confirm-password-input').fill(config.secondUserPassword);
     await acceptPage.getByTestId('invitation-submit-button').click();
-    await acceptPage.waitForURL('**/queries**', { timeout: 15_000 });
+    await acceptPage.waitForURL('**/new**', { timeout: 15_000 });
     await expect(acceptPage.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
     await acceptCtx.close();
 
