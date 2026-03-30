@@ -1,9 +1,24 @@
 # Tekmar Public API Specification
 # Boundary 1: Interface Layer (tekmar-interface) ↔ Application API (tekmar-api)
 #
-# Version: 1.0.0 (MVP)
+# Version: 1.1.0
 # Status: Active
-# Last updated: 2026-03-19
+# Last updated: 2026-03-30
+#
+# Changelog:
+#   1.1.0 (2026-03-30):
+#     - Added `search` query parameter to GET /queries (searches query_text).
+#     - Added `search` query parameter to GET /users (searches email, display_name).
+#     - Changed `status` on GET /queries to accept comma-separated multiple values.
+#     - Changed `initiated_by` on GET /queries to accept comma-separated multiple values.
+#     - Changed `role` on GET /users to accept comma-separated multiple values.
+#     - Changed `status` on GET /users to accept comma-separated multiple values.
+#     - Changed `action` on GET /activity-logs to accept comma-separated multiple values.
+#     - Changed `user_id` on GET /activity-logs to accept comma-separated multiple values.
+#     All changes are backward compatible: single values still work as before.
+#
+#   1.0.0 (2026-03-19):
+#     - Initial MVP specification.
 #
 # This specification defines every HTTP endpoint that the Interface Layer
 # uses to communicate with the Application API. All endpoints are served
@@ -451,16 +466,31 @@ endpoints:
       members can view the user list.
     request:
       query_parameters:
+        search:
+          type: string
+          required: false
+          description: >
+            Free-text search across user email and display_name.
+            Case-insensitive partial match (contains). Combines
+            with other filters using AND logic.
         role:
           type: string
           required: false
           allowed_values: [admin, member]
-          description: Filter by role.
+          description: >
+            Filter by role. Accepts a single value or multiple
+            comma-separated values (e.g., "admin,member"). When
+            multiple values are provided, returns users matching
+            ANY of the specified roles (OR within this filter).
         status:
           type: string
           required: false
           allowed_values: [active, disabled]
-          description: Filter by account status.
+          description: >
+            Filter by account status. Accepts a single value or
+            multiple comma-separated values. When multiple values
+            are provided, returns users matching ANY of the
+            specified statuses.
         limit:
           type: integer
           required: false
@@ -1030,6 +1060,13 @@ endpoints:
       submission time (most recent first).
     request:
       query_parameters:
+        search:
+          type: string
+          required: false
+          description: >
+            Free-text search across query_text. Case-insensitive
+            partial match (contains). Combines with other filters
+            using AND logic.
         status:
           type: string
           required: false
@@ -1041,12 +1078,22 @@ endpoints:
             - completed
             - failed
             - rejected
-          description: Filter by query status.
+          description: >
+            Filter by query status. Accepts a single value or
+            multiple comma-separated values (e.g.,
+            "completed,failed"). When multiple values are
+            provided, returns queries matching ANY of the
+            specified statuses (OR within this filter). Combines
+            with other filters using AND logic.
         initiated_by:
           type: string (UUID)
           required: false
           description: >
-            Filter to queries submitted by a specific user.
+            Filter to queries submitted by specific user(s).
+            Accepts a single UUID or multiple comma-separated
+            UUIDs (e.g., "uuid1,uuid2"). When multiple values
+            are provided, returns queries initiated by ANY of
+            the specified users.
         limit:
           type: integer
           required: false
@@ -1135,11 +1182,20 @@ endpoints:
             - query_plan_approved
             - query_plan_rejected
             - organization_updated
-          description: Filter by action type.
+          description: >
+            Filter by action type. Accepts a single value or
+            multiple comma-separated values (e.g.,
+            "query_submitted,query_plan_approved"). When
+            multiple values are provided, returns logs matching
+            ANY of the specified actions (OR within this filter).
         user_id:
           type: string (UUID)
           required: false
-          description: Filter to actions performed by a specific user.
+          description: >
+            Filter to actions performed by specific user(s).
+            Accepts a single UUID or multiple comma-separated
+            UUIDs. When multiple values are provided, returns
+            logs for ANY of the specified users.
         limit:
           type: integer
           required: false
