@@ -17,7 +17,7 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('register-password-input').fill(password);
     await page.getByTestId('register-confirm-password-input').fill(password);
     await page.getByTestId('register-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
     await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
   });
 
@@ -26,7 +26,7 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('login-email-input').fill(adminEmail);
     await page.getByTestId('login-password-input').fill(password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
 
     // Invite — intercept the POST response to capture the invitation token
     await page.getByTestId('sidebar-nav-team').click();
@@ -58,7 +58,7 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('invitation-password-input').fill(password);
     await page.getByTestId('invitation-confirm-password-input').fill(password);
     await page.getByTestId('invitation-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
     await ctx.close();
   });
 
@@ -69,7 +69,7 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('login-email-input').fill(memberEmail);
     await page.getByTestId('login-password-input').fill(password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
     await expect(page.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
 
     await expect(page.getByTestId('sidebar-nav-integrations')).toBeHidden();
@@ -85,7 +85,7 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('login-email-input').fill(memberEmail);
     await page.getByTestId('login-password-input').fill(password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
 
     for (const route of ['/integrations', '/users', '/activity-logs', '/settings']) {
       await page.goto(route);
@@ -102,10 +102,11 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('login-email-input').fill(memberEmail);
     await page.getByTestId('login-password-input').fill(password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
 
     await expect(page.getByTestId('query-input-textarea')).toBeVisible();
-    await expect(page.getByTestId('query-submit-button')).toBeVisible();
+    // Submit button only appears when text is present (chat-style input)
+    await expect(page.getByTestId('query-input-textarea')).toBeEnabled();
   });
 
   base('member can view query history', async ({ page }) => {
@@ -115,7 +116,7 @@ base.describe.serial('Authorization & Security', () => {
     await page.getByTestId('login-email-input').fill(memberEmail);
     await page.getByTestId('login-password-input').fill(password);
     await page.getByTestId('login-submit-button').click();
-    await page.waitForURL('**/queries**', { timeout: 15_000 });
+    await page.waitForURL('**/new**', { timeout: 15_000 });
 
     await page.getByTestId('sidebar-nav-history').click();
     await page.waitForURL('**/queries/history**');
@@ -126,7 +127,7 @@ base.describe.serial('Authorization & Security', () => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
-    for (const route of ['/queries', '/integrations', '/users']) {
+    for (const route of ['/new', '/integrations', '/users']) {
       await page.goto(route);
       await page.waitForURL('**/login**', { timeout: 10_000 });
     }

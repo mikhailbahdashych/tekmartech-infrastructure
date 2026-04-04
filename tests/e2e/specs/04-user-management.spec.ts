@@ -11,6 +11,39 @@ test.describe('User Management', () => {
     await expect(rows.first()).toBeVisible();
   });
 
+  test('search and filter users', async ({ authenticatedPage: page }) => {
+    await page.getByTestId('sidebar-nav-team').click();
+    await page.waitForURL('**/users**');
+    await expect(page.getByTestId('user-table')).toBeVisible({ timeout: 10_000 });
+
+    // Search by name
+    const searchInput = page.getByTestId('tk-search-input-users');
+    await searchInput.fill('E2E Test Admin');
+    await page.waitForTimeout(1500);
+    await expect(page.getByTestId('user-table')).toBeVisible();
+    expect(page.url()).toContain('search=');
+
+    // Clear search
+    await searchInput.clear();
+    await page.waitForTimeout(1000);
+
+    // Filter by role using multi-select
+    await page.getByTestId('tk-multi-select-trigger-user-role').click();
+    await expect(page.getByTestId('tk-multi-select-panel-user-role')).toBeVisible({ timeout: 5_000 });
+    await page.getByTestId('tk-multi-select-option-admin').click();
+    await page.getByTestId('tk-multi-select-trigger-user-role').click();
+    await page.waitForTimeout(1500);
+    expect(page.url()).toContain('role=admin');
+
+    // Filter by status using multi-select
+    await page.getByTestId('tk-multi-select-trigger-user-status').click();
+    await expect(page.getByTestId('tk-multi-select-panel-user-status')).toBeVisible({ timeout: 5_000 });
+    await page.getByTestId('tk-multi-select-option-active').click();
+    await page.getByTestId('tk-multi-select-trigger-user-status').click();
+    await page.waitForTimeout(1500);
+    expect(page.url()).toContain('status=active');
+  });
+
   test('invite a user and see pending invitation', async ({ authenticatedPage: page }) => {
     const inviteEmail = `e2e-invite-check-${Date.now()}@tekmar.test`;
 
@@ -72,7 +105,7 @@ test.describe('User Management', () => {
     await acceptPage.getByTestId('invitation-password-input').fill(config.secondUserPassword);
     await acceptPage.getByTestId('invitation-confirm-password-input').fill(config.secondUserPassword);
     await acceptPage.getByTestId('invitation-submit-button').click();
-    await acceptPage.waitForURL('**/queries**', { timeout: 15_000 });
+    await acceptPage.waitForURL('**/new**', { timeout: 15_000 });
     await expect(acceptPage.getByTestId('sidebar-container')).toBeVisible({ timeout: 10_000 });
     await acceptCtx.close();
 

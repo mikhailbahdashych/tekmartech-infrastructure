@@ -1,6 +1,16 @@
 {
-  "version": "2.0.0",
-  "generated_at": "2026-03-28T00:00:00Z",
+  "version": "4.0.0",
+  "generated_at": "2026-03-30T00:00:00Z",
+  "notes": {
+    "url_query_params": "Pages with filters sync state to URL query params. Share a filtered URL and the recipient sees the same view. Invalid params are silently dropped.",
+    "tk_component_testid_patterns": {
+      "tk-multi-select": "Generates: tk-multi-select-trigger-{testId}, tk-multi-select-panel-{testId}, tk-multi-select-select-all, tk-multi-select-option-{optionValue}",
+      "tk-search-input": "Generates: tk-search-input-{testId}",
+      "tk-input": "Passes testId directly as data-testid",
+      "tk-textarea": "Passes testId directly as data-testid",
+      "tk-select": "Passes testId directly as data-testid"
+    }
+  },
   "pages": {
     "login": {
       "route": "/login",
@@ -137,6 +147,18 @@
         }
       }
     },
+    "layout": {
+      "route": "*",
+      "auth_required": true,
+      "admin_only": false,
+      "testids": {
+        "sidebar-toggle-button": {
+          "element": "button",
+          "purpose": "Toggle sidebar between expanded/collapsed/hidden states",
+          "interactions": ["click"]
+        }
+      }
+    },
     "sidebar": {
       "route": "*",
       "auth_required": true,
@@ -144,22 +166,24 @@
       "testids": {
         "sidebar-container": {
           "element": "aside",
-          "purpose": "The sidebar navigation container",
-          "interactions": ["read"]
+          "purpose": "The sidebar navigation container (supports expanded/collapsed/hidden states via CSS classes)",
+          "interactions": ["read"],
+          "states": ["expanded", "collapsed", "hidden"]
         },
         "sidebar-brand-text": {
           "element": "span",
-          "purpose": "Tekmar brand text in sidebar header",
-          "interactions": ["read"]
+          "purpose": "Tekmar brand text (links to /new)",
+          "interactions": ["read"],
+          "visibility": "conditional"
         },
         "sidebar-new-query-button": {
-          "element": "button",
-          "purpose": "Prominent New Query button at top of sidebar",
+          "element": "a",
+          "purpose": "New Query button (links to /new)",
           "interactions": ["click"]
         },
         "sidebar-nav-queries": {
           "element": "a",
-          "purpose": "Queries navigation link",
+          "purpose": "Queries navigation link (links to /new)",
           "interactions": ["click"]
         },
         "sidebar-nav-history": {
@@ -191,38 +215,88 @@
           "interactions": ["click"],
           "visibility": "conditional"
         },
+        "sidebar-theme-toggle": {
+          "element": "button",
+          "purpose": "Toggle between dark and light theme",
+          "interactions": ["click"]
+        },
         "sidebar-user-name": {
           "element": "div",
-          "purpose": "Current user display name",
-          "interactions": ["read"]
+          "purpose": "Current user display name (hidden when collapsed)",
+          "interactions": ["read"],
+          "visibility": "conditional"
         },
         "sidebar-user-role-badge": {
-          "element": "tk-badge",
-          "purpose": "Current user role badge (Admin/Member)",
-          "interactions": ["read"]
+          "element": "span",
+          "purpose": "Current user role badge (Admin/Member, hidden when collapsed)",
+          "interactions": ["read"],
+          "visibility": "conditional"
         },
         "sidebar-logout-button": {
           "element": "button",
-          "purpose": "Logout button",
-          "interactions": ["click"]
+          "purpose": "Logout button (hidden when collapsed)",
+          "interactions": ["click"],
+          "visibility": "conditional"
         }
       }
     },
     "query-page": {
-      "route": "/queries",
+      "route": "/new",
       "auth_required": true,
       "admin_only": false,
       "testids": {
         "query-input-textarea": {
-          "element": "textarea (via tk-textarea)",
-          "purpose": "Main query text input area",
+          "element": "div (chat-input container)",
+          "purpose": "Chat-style query input with auto-growing textarea",
           "interactions": ["type", "clear"]
         },
         "query-submit-button": {
-          "element": "tk-button",
-          "purpose": "Submit/run query button",
+          "element": "button",
+          "purpose": "Send/submit query button (circular, appears when text is present)",
           "interactions": ["click"],
-          "states": ["enabled", "disabled", "loading"]
+          "states": ["enabled", "disabled", "hidden"]
+        },
+        "query-integration-selector": {
+          "element": "div",
+          "purpose": "Integration selector pill row",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-integration-pill-{id}": {
+          "element": "button",
+          "purpose": "Individual integration toggle pill (dynamic, by integration UUID)",
+          "interactions": ["click"],
+          "dynamic": true
+        },
+        "query-thread-container": {
+          "element": "div",
+          "purpose": "Conversation thread container",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-user-message": {
+          "element": "div",
+          "purpose": "User's query message bubble (right-aligned)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-user-message-text": {
+          "element": "p",
+          "purpose": "Query text within user message bubble",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-ai-response": {
+          "element": "div",
+          "purpose": "AI response block (interpretation + plan)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-ai-response-label": {
+          "element": "span",
+          "purpose": "AI response header label (Analyzing.../Tekmar AI)",
+          "interactions": ["read"],
+          "visibility": "conditional"
         },
         "query-interpretation-container": {
           "element": "div",
@@ -232,7 +306,7 @@
         },
         "query-interpretation-text": {
           "element": "div",
-          "purpose": "Accumulated AI analysis text",
+          "purpose": "Accumulated AI analysis text (rendered as markdown)",
           "interactions": ["read"],
           "visibility": "conditional"
         },
@@ -250,7 +324,7 @@
         },
         "query-plan-container": {
           "element": "div",
-          "purpose": "Plan approval section",
+          "purpose": "Plan approval section within AI response",
           "interactions": ["read"],
           "visibility": "conditional"
         },
@@ -262,12 +336,12 @@
         },
         "query-plan-steps-list": {
           "element": "div",
-          "purpose": "Container for list of plan steps",
+          "purpose": "Container for plan step cards",
           "interactions": ["read"]
         },
         "query-plan-step-{index}": {
           "element": "div",
-          "purpose": "Individual plan step (0-based index)",
+          "purpose": "Individual plan step card (0-based index)",
           "interactions": ["read"],
           "dynamic": true
         },
@@ -279,7 +353,7 @@
         },
         "query-plan-step-tool-name-{index}": {
           "element": "span",
-          "purpose": "Tool name within a plan step",
+          "purpose": "Tool display name within plan step",
           "interactions": ["read"],
           "dynamic": true
         },
@@ -303,7 +377,7 @@
         },
         "query-execution-container": {
           "element": "div",
-          "purpose": "Live execution log container",
+          "purpose": "Live execution progress container",
           "interactions": ["read"],
           "visibility": "conditional"
         },
@@ -320,7 +394,7 @@
         },
         "query-execution-step-status-{index}": {
           "element": "div",
-          "purpose": "Status icon container (spinner/checkmark/X) for execution step",
+          "purpose": "Status icon (spinner/checkmark/X) for execution step",
           "interactions": ["read"],
           "dynamic": true
         },
@@ -353,7 +427,7 @@
         },
         "query-results-container": {
           "element": "div",
-          "purpose": "Results section containing summary and tables",
+          "purpose": "Results section with summary, tables, and actions",
           "interactions": ["read"],
           "visibility": "conditional"
         },
@@ -384,6 +458,11 @@
           "interactions": ["read"],
           "dynamic": true
         },
+        "query-results-action-row": {
+          "element": "div",
+          "purpose": "Action row with CSV download button",
+          "interactions": ["read"]
+        },
         "query-results-download-csv-button": {
           "element": "tk-button",
           "purpose": "Download results as CSV file",
@@ -391,7 +470,7 @@
         },
         "query-results-transparency-log-toggle": {
           "element": "button",
-          "purpose": "Expand/collapse transparency log section",
+          "purpose": "Expand/collapse transparency log",
           "interactions": ["click"]
         },
         "query-results-transparency-log-container": {
@@ -430,7 +509,40 @@
       "route": "/queries/history",
       "auth_required": true,
       "admin_only": false,
+      "url_query_params": {
+        "search": { "type": "string", "max_length": 200, "description": "Free-text search filter" },
+        "status": { "type": "comma-separated enum", "allowed": ["interpreting", "awaiting_approval", "approved", "executing", "completed", "failed", "rejected"], "description": "Filter by query status" },
+        "user": { "type": "comma-separated UUID", "description": "Filter by initiating user IDs" },
+        "limit": { "type": "number", "allowed": [10, 25, 50, 100], "default": 25, "description": "Rows per page" }
+      },
       "testids": {
+        "tk-search-input-queries": {
+          "element": "input (via tk-search-input)",
+          "purpose": "Search input for filtering queries by text",
+          "interactions": ["type", "clear"]
+        },
+        "tk-multi-select-trigger-query-status": {
+          "element": "button (via tk-multi-select)",
+          "purpose": "Status filter dropdown trigger",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-panel-query-status": {
+          "element": "div (via tk-multi-select)",
+          "purpose": "Status filter dropdown panel",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "tk-multi-select-trigger-query-user": {
+          "element": "button (via tk-multi-select)",
+          "purpose": "User filter dropdown trigger",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-panel-query-user": {
+          "element": "div (via tk-multi-select)",
+          "purpose": "User filter dropdown panel",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
         "query-history-table": {
           "element": "table",
           "purpose": "Query history table",
@@ -442,15 +554,15 @@
           "interactions": ["click"],
           "dynamic": true
         },
-        "query-history-status-filter": {
-          "element": "button (via tk-select)",
-          "purpose": "Status filter dropdown",
-          "interactions": ["click", "select"]
-        },
         "query-history-pagination": {
           "element": "div",
-          "purpose": "Server-side pagination controls (Load more)",
-          "interactions": ["read", "click"],
+          "purpose": "Server-driven pagination controls (rows per page, prev/next)",
+          "interactions": ["read", "click"]
+        },
+        "query-history-empty-state": {
+          "element": "tk-empty-state",
+          "purpose": "Empty state when no queries match filters",
+          "interactions": ["read"],
           "visibility": "conditional"
         }
       }
@@ -518,8 +630,8 @@
           "dynamic": true
         },
         "integration-card-type-{id}": {
-          "element": "div",
-          "purpose": "Integration type label on card",
+          "element": "span",
+          "purpose": "Integration type label on card (with tk-integration-icon)",
           "interactions": ["read"],
           "dynamic": true
         },
@@ -537,14 +649,14 @@
           "visibility": "conditional"
         },
         "integration-card-test-button-{id}": {
-          "element": "tk-button",
+          "element": "button",
           "purpose": "Test connection button on card",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"],
           "dynamic": true
         },
         "integration-card-disconnect-button-{id}": {
-          "element": "tk-button",
+          "element": "button",
           "purpose": "Disconnect button on card",
           "interactions": ["click"],
           "dynamic": true
@@ -563,17 +675,17 @@
         },
         "integration-type-card-aws": {
           "element": "button",
-          "purpose": "AWS type selection card",
+          "purpose": "AWS type selection card (with tk-integration-icon)",
           "interactions": ["click"]
         },
         "integration-type-card-github": {
           "element": "button",
-          "purpose": "GitHub type selection card",
+          "purpose": "GitHub type selection card (with tk-integration-icon)",
           "interactions": ["click"]
         },
         "integration-type-card-google-workspace": {
           "element": "button",
-          "purpose": "Google Workspace type selection card",
+          "purpose": "Google Workspace type selection card (with tk-integration-icon)",
           "interactions": ["click"]
         },
         "integration-connect-display-name-input": {
@@ -669,6 +781,11 @@
       "route": "/users",
       "auth_required": true,
       "admin_only": true,
+      "url_query_params": {
+        "search": { "type": "string", "max_length": 200, "description": "Free-text search by name or email" },
+        "role": { "type": "comma-separated enum", "allowed": ["admin", "member"], "description": "Filter by user role" },
+        "status": { "type": "comma-separated enum", "allowed": ["active", "disabled"], "description": "Filter by user status" }
+      },
       "testids": {
         "user-list-container": {
           "element": "div",
@@ -679,6 +796,33 @@
           "element": "tk-button",
           "purpose": "Invite User header button",
           "interactions": ["click"]
+        },
+        "tk-search-input-users": {
+          "element": "input (via tk-search-input)",
+          "purpose": "Search input for filtering users by name or email",
+          "interactions": ["type", "clear"]
+        },
+        "tk-multi-select-trigger-user-role": {
+          "element": "button (via tk-multi-select)",
+          "purpose": "Role filter dropdown trigger",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-panel-user-role": {
+          "element": "div (via tk-multi-select)",
+          "purpose": "Role filter dropdown panel",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "tk-multi-select-trigger-user-status": {
+          "element": "button (via tk-multi-select)",
+          "purpose": "Status filter dropdown trigger",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-panel-user-status": {
+          "element": "div (via tk-multi-select)",
+          "purpose": "Status filter dropdown panel",
+          "interactions": ["read"],
+          "visibility": "conditional"
         },
         "user-table": {
           "element": "table",
@@ -891,26 +1035,43 @@
       "route": "/activity-logs",
       "auth_required": true,
       "admin_only": true,
+      "url_query_params": {
+        "action": { "type": "comma-separated enum", "allowed": ["user_registered", "user_login", "user_invited", "user_removed", "user_role_changed", "integration_connected", "integration_disconnected", "integration_health_checked", "query_submitted", "query_plan_approved", "query_plan_rejected", "organization_updated"], "description": "Filter by action type" },
+        "user": { "type": "comma-separated UUID", "description": "Filter by user IDs" },
+        "limit": { "type": "number", "allowed": [10, 25, 50, 100], "default": 25, "description": "Rows per page" }
+      },
       "testids": {
         "activity-log-container": {
           "element": "div",
           "purpose": "Activity log page container",
           "interactions": ["read"]
         },
+        "tk-multi-select-trigger-activity-action": {
+          "element": "button (via tk-multi-select)",
+          "purpose": "Action type filter dropdown trigger",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-panel-activity-action": {
+          "element": "div (via tk-multi-select)",
+          "purpose": "Action type filter dropdown panel",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "tk-multi-select-trigger-activity-user": {
+          "element": "button (via tk-multi-select)",
+          "purpose": "User filter dropdown trigger",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-panel-activity-user": {
+          "element": "div (via tk-multi-select)",
+          "purpose": "User filter dropdown panel",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
         "activity-log-table": {
           "element": "table",
           "purpose": "Activity log table",
           "interactions": ["read"]
-        },
-        "activity-log-action-filter": {
-          "element": "button (via tk-select)",
-          "purpose": "Action type filter dropdown",
-          "interactions": ["click", "select"]
-        },
-        "activity-log-user-filter": {
-          "element": "button (via tk-select)",
-          "purpose": "User filter dropdown",
-          "interactions": ["click", "select"]
         },
         "activity-log-row-{index}": {
           "element": "tr",
@@ -938,9 +1099,71 @@
         },
         "activity-log-pagination": {
           "element": "div",
-          "purpose": "Server-side pagination controls (Load more)",
-          "interactions": ["read", "click"],
+          "purpose": "Server-driven pagination controls (rows per page, prev/next)",
+          "interactions": ["read", "click"]
+        }
+      }
+    },
+    "notifications": {
+      "route": "*",
+      "auth_required": false,
+      "admin_only": false,
+      "testids": {
+        "notification-host": {
+          "element": "div",
+          "purpose": "Notification toast host container (fixed top-center)",
+          "interactions": ["read"]
+        },
+        "notification-toast-{id}": {
+          "element": "div",
+          "purpose": "Individual notification toast (dynamic, by notification ID)",
+          "interactions": ["read"],
+          "dynamic": true,
+          "states": ["visible", "dismissing"]
+        },
+        "notification-message-{id}": {
+          "element": "span",
+          "purpose": "Notification message text",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "notification-dismiss-{id}": {
+          "element": "button",
+          "purpose": "Dismiss notification button",
+          "interactions": ["click"],
+          "dynamic": true
+        }
+      }
+    },
+    "shared-multi-select": {
+      "route": "*",
+      "auth_required": false,
+      "admin_only": false,
+      "description": "Shared testids generated by all tk-multi-select instances",
+      "testids": {
+        "tk-multi-select-trigger-{testId}": {
+          "element": "button",
+          "purpose": "Multi-select dropdown trigger (testId is page-specific, see page sections)",
+          "interactions": ["click"],
+          "dynamic": true
+        },
+        "tk-multi-select-panel-{testId}": {
+          "element": "div",
+          "purpose": "Multi-select dropdown panel",
+          "interactions": ["read"],
+          "dynamic": true,
           "visibility": "conditional"
+        },
+        "tk-multi-select-select-all": {
+          "element": "button",
+          "purpose": "Select all / deselect all toggle option (shared across all instances)",
+          "interactions": ["click"]
+        },
+        "tk-multi-select-option-{value}": {
+          "element": "button",
+          "purpose": "Individual option checkbox (dynamic, by option value string)",
+          "interactions": ["click"],
+          "dynamic": true
         }
       }
     },
