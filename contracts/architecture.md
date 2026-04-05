@@ -1,8 +1,8 @@
 # Tekmar — Architecture Contract
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Ratified
-**Last updated:** 2026-03-19
+**Last updated:** 2026-04-05
 
 ---
 
@@ -93,6 +93,8 @@ The Pipeline Service handles the complete lifecycle of a query from the moment i
 **The Orchestrator** coordinates the step-by-step execution of a query. It receives a query request, sends it to the Interpreter, receives the query plan, returns the plan to the Application API for user approval (or proceeds directly if the user has enabled auto-execution), sends the approved plan to the Execution Engine, collects results, passes them to the Output Engine, and returns the formatted output to the Application API. The Orchestrator handles error states within the query lifecycle: retries, timeouts, partial failures, and graceful degradation.
 
 **The Interpreter** is the AI-powered component that translates natural language input into structured query plans. It receives the user's question along with a catalog of available MCP tools (determined by which integrations the organization has connected), and it produces a query plan: a structured document describing a sequence of discrete steps, where each step specifies which MCP tool to invoke, what parameters to pass, and what to do with the result. The Interpreter can only reference MCP tools that exist in the provided catalog. It cannot invent tools, construct raw API calls, or generate arbitrary code. If a request cannot be fulfilled with available tools, the Interpreter reports this in the plan. The Interpreter has access to a library of verified query plan templates for common requests. When a user's question matches a known pattern, the Interpreter uses the template rather than constructing a plan from scratch, which increases determinism and reliability. The Interpreter communicates with an LLM provider through an abstraction layer that allows the provider to be swapped (between commercial APIs such as Claude or GPT, and local models through Ollama) without architectural changes.
+
+The Interpreter supports multi-turn conversation. When a user's question is ambiguous or requires clarification (for example, "Check our AWS accounts" when the organization has both production and staging accounts connected), the Interpreter can ask a clarifying question with structured options instead of generating a plan immediately. The user responds, and the Interpreter continues reasoning with the additional context. This exchange can repeat multiple turns until the Interpreter has sufficient information to produce a plan. The Pipeline Service remains stateless during multi-turn conversation: the Application API stores the conversation history (all previous turns of AI analysis, clarification questions, and user responses) in the database and passes the full history with each subsequent interpretation request. The Interpreter reconstructs its context from this history on every turn.
 
 **The Execution Engine** takes an approved query plan and executes it deterministically. There is no AI in this component. It reads the plan step by step, invokes the specified MCP tools with the specified parameters, collects results, applies transformations (filtering, sorting, joining across steps), and produces raw output along with a complete transparency log recording every MCP tool call, its parameters, timestamps, response status, and response data hashes. The Execution Engine communicates with external systems exclusively through MCP servers in the Integration Layer.
 

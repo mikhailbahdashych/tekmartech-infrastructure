@@ -221,7 +221,7 @@ test.describe('Query Lifecycle', () => {
     await page.waitForTimeout(1500);
     expect(page.url()).toContain('status=completed');
   });
-
+ 
   test('reject a plan', async ({ authenticatedPage: page }) => {
     test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
     test.setTimeout(300_000);

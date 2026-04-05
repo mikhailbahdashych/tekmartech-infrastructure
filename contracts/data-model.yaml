@@ -1,11 +1,19 @@
 # Tekmar Data Model Specification
 # Boundary 4: Application API / Admin API ↔ PostgreSQL
 #
-# Version: 1.0.0 (MVP)
+# Version: 1.1.0
 # Status: Active
-# Last updated: 2026-03-19
+# Last updated: 2026-04-05
 #
-# This specification defines the complete database schema for the MVP.
+# Changelog:
+#   1.1.0 (2026-04-05):
+#     - Added `conversation_history` JSONB column to queries table
+#       for multi-turn conversation support.
+#
+#   1.0.0 (2026-03-19):
+#     - Initial MVP specification.
+#
+# This specification defines the complete database schema.
 # Both tekmar-api and tekmar-admin-api connect to this database.
 # Migrations are managed exclusively by tekmar-api.
 #
@@ -665,6 +673,27 @@ entities:
           the stage at which the error occurred, the specific
           MCP tool call that failed (if applicable), and any
           error codes or stack traces from external systems.
+
+      conversation_history:
+        type: JSONB
+        nullable: true
+        default: "NULL"
+        description: >
+          The multi-turn conversation history between the AI and
+          the user during interpretation. NULL for single-turn
+          queries (where the AI generates a plan without asking
+          clarifying questions). When populated, contains an
+          ordered array of conversation turns, alternating between
+          assistant turns (AI analysis + clarification question)
+          and user turns (user response). Each turn is stored as
+          a JSON object with a "role" field ("assistant" or "user")
+          and role-specific content fields. The complete schema
+          for conversation turns is defined in internal-api.yaml
+          under the conversation_history field of POST /interpret.
+          This field is updated incrementally: after each turn,
+          the new turn is appended to the array. When
+          interpretation completes (plan generated or failed),
+          this field contains the full conversation record.
 
       submitted_at:
         type: TIMESTAMPTZ

@@ -1,11 +1,18 @@
 # Tekmar Public API Specification
 # Boundary 1: Interface Layer (tekmar-interface) ↔ Application API (tekmar-api)
 #
-# Version: 1.1.0
+# Version: 1.2.0
 # Status: Active
-# Last updated: 2026-03-30
+# Last updated: 2026-04-05
 #
 # Changelog:
+#   1.2.0 (2026-04-05):
+#     - Added client-to-server WebSocket messages (bidirectional WebSocket).
+#     - Added `query_clarification_response` client message for multi-turn
+#       conversation support (user responds to AI clarification questions).
+#     - Added `query_cancel` client message for cancelling in-progress queries.
+#     - Updated WebSocket section comment to reflect bidirectional protocol.
+#
 #   1.1.0 (2026-03-30):
 #     - Added `search` query parameter to GET /queries (searches query_text).
 #     - Added `search` query parameter to GET /users (searches email, display_name).
@@ -1215,10 +1222,12 @@ endpoints:
 # WEBSOCKET PROTOCOL
 # =============================================================================
 # The Interface Layer maintains a persistent WebSocket connection to the
-# Application API for real-time query lifecycle updates. This connection
-# supplements the HTTP endpoints; it does not replace them. Discrete
-# actions (submit, approve, reject) use HTTP. Continuous status updates
-# during interpretation and execution use the WebSocket.
+# Application API for real-time query lifecycle updates. The connection is
+# bidirectional: the server pushes query lifecycle events to the client,
+# and the client sends messages for actions that require real-time delivery
+# (responding to AI clarification questions, cancelling queries). Discrete
+# actions that are not time-sensitive (submit, approve, reject) still use
+# HTTP endpoints.
 # =============================================================================
 
 websocket:
@@ -1290,6 +1299,67 @@ websocket:
             A chunk of the AI's response text. Typically a few
             tokens (1-20 characters). The Interface Layer appends
             this to the accumulated interpretation text in the UI.
+        timestamp: { type: string (ISO 8601 datetime) }
+
+    query_clarification_needed:
+      description: >
+        Sent during multi-turn interpretation when the AI needs
+        additional information from the user before it can generate
+        a plan. The AI may present structured options (e.g., "Which
+        AWS account: Production or Staging?") or ask an open-ended
+        question. The Interface Layer renders the question and
+        options in the conversation thread and waits for the user
+        to respond via the query_clarification_response client
+        message. Interpretation is paused until the user responds.
+      fields:
+        event: { type: string, value: "query_clarification_needed" }
+        query_id: { type: string (UUID) }
+        clarification_id:
+          type: string (UUID)
+          description: >
+            Unique identifier for this clarification request.
+            Used to correlate the user's response.
+        question:
+          type: string
+          description: >
+            The AI's question in natural language. Displayed to
+            the user in the conversation thread. May contain
+            markdown formatting.
+        options:
+          type: array of object
+          required: false
+          description: >
+            If present, the AI is offering structured choices.
+            The Interface Layer renders these as clickable buttons
+            or a selection list. If absent, the user should
+            respond with free text.
+          items:
+            fields:
+              option_id:
+                type: string
+                description: >
+                  Unique identifier for this option. Sent back
+                  in the query_clarification_response message
+                  if the user selects it.
+              label:
+                type: string
+                description: >
+                  Human-readable label for this option. Displayed
+                  as button text or list item.
+              description:
+                type: string
+                required: false
+                description: >
+                  Optional longer description shown below the
+                  label to help the user decide.
+        allows_free_text:
+          type: boolean
+          default: true
+          description: >
+            Whether the user can type a free-text response instead
+            of (or in addition to) selecting an option. When
+            options are present and allows_free_text is false,
+            the user must select one of the offered options.
         timestamp: { type: string (ISO 8601 datetime) }
 
     query_plan_ready:
@@ -1407,14 +1477,164 @@ websocket:
   # ---------------------------------------------------------------------------
   # Client → Server Messages (sent by Interface Layer)
   # ---------------------------------------------------------------------------
-  # The Interface Layer does not currently send messages through the
-  # WebSocket. All user actions (submit, approve, reject) are performed
-  # via HTTP endpoints. The WebSocket is a one-directional channel from
-  # server to client in the MVP. Future versions may add client-to-server
-  # messages for features like cancelling an in-progress query.
+  # ---------------------------------------------------------------------------
+  # Client → Server Messages (sent by Interface Layer)
+  # ---------------------------------------------------------------------------
+  # These messages are sent by the Interface Layer through the WebSocket
+  # connection. They are used for actions that require real-time delivery
+  # within an active query session, such as responding to AI clarification
+  # questions during multi-turn interpretation and cancelling in-progress
+  # queries.
+  #
+  # Every message has an "event" field that identifies the message type
+  # and a "query_id" field that scopes the message to a specific query.
+  # The Application API validates the query_id belongs to the sending
+  # user's organization and that the query is in a valid state for the
+  # message type.
   # ---------------------------------------------------------------------------
 
-  client_messages: null
+  client_messages:
+
+    query_clarification_response:
+      description: >
+        Sent by the user in response to a clarification question from
+        the AI during multi-turn interpretation. The AI may ask the
+        user to choose between options (e.g., "Which AWS account?")
+        or request additional context. This message delivers the
+        user's response back to the Pipeline Service so interpretation
+        can continue.
+      fields:
+        event:
+          type: string
+          value: query_clarification_response
+        query_id:
+          type: string (UUID)
+          description: >
+            The query currently being interpreted. Must be in
+            "interpreting" status with an active clarification
+            pending.
+        response_type:
+          type: string
+          allowed_values:
+            - option_selection
+            - free_text
+          description: >
+            How the user responded. "option_selection" means the
+            user clicked one of the structured options presented
+            by the AI. "free_text" means the user typed a custom
+            response.
+        selected_option_id:
+          type: string
+          required: false
+          description: >
+            The ID of the option the user selected. Required when
+            response_type is "option_selection". Must match one of
+            the option IDs from the clarification_needed event.
+        text:
+          type: string
+          required: false
+          max_length: 2000
+          description: >
+            The user's free-text response. Required when
+            response_type is "free_text". Optional alongside
+            option_selection to provide additional context.
+      validation:
+        - The query_id must exist and belong to the user's organization.
+        - The query must be in "interpreting" status.
+        - A clarification must be pending (the last server event for
+          this query was query_clarification_needed).
+        - If response_type is "option_selection", selected_option_id
+          must be provided and must match a valid option.
+        - If response_type is "free_text", text must be provided and
+          non-empty.
+      errors:
+        - code: ws.invalid_query
+          description: Query not found or not in interpreting status.
+        - code: ws.no_pending_clarification
+          description: No clarification question is pending for this query.
+        - code: ws.invalid_option
+          description: The selected option ID does not match any offered option.
+        - code: ws.validation_error
+          description: Message payload failed validation.
+
+    query_cancel:
+      description: >
+        Sent by the user to cancel an in-progress query. The query
+        can be in "interpreting" or "executing" status. The
+        Application API will attempt to stop the Pipeline Service
+        operation and transition the query to "failed" status with
+        a cancellation reason.
+      fields:
+        event:
+          type: string
+          value: query_cancel
+        query_id:
+          type: string (UUID)
+          description: >
+            The query to cancel. Must be in "interpreting" or
+            "executing" status.
+        reason:
+          type: string
+          required: false
+          max_length: 500
+          description: >
+            Optional reason for cancellation. Stored in
+            error_details for audit purposes.
+      validation:
+        - The query_id must exist and belong to the user's organization.
+        - The query must be in "interpreting" or "executing" status.
+        - Only the user who initiated the query or an admin can cancel it.
+      effects:
+        - The Application API signals the Pipeline Service to stop
+          processing (by closing the NDJSON stream connection).
+        - The query status transitions to "failed" with error_message
+          "Query cancelled by user" and error_details containing the
+          cancellation reason and the user who cancelled.
+        - A query_failed server event is sent via WebSocket.
+        - completed_at is set to the current timestamp.
+      errors:
+        - code: ws.invalid_query
+          description: Query not found or not in a cancellable status.
+        - code: ws.not_authorized
+          description: User is not authorized to cancel this query.
+
+  # ---------------------------------------------------------------------------
+  # Client Message Error Response
+  # ---------------------------------------------------------------------------
+  # When a client message fails validation, the server sends an error
+  # event back through the WebSocket (not an HTTP response). The error
+  # event uses the same format as server messages.
+  # ---------------------------------------------------------------------------
+
+  client_message_error:
+    description: >
+      Sent by the server in response to an invalid client message.
+      This is not a query lifecycle event — it is a protocol-level
+      error indicating the client's message was rejected.
+    fields:
+      event:
+        type: string
+        value: client_message_error
+      original_event:
+        type: string
+        description: >
+          The event type of the client message that failed
+          (e.g., "query_clarification_response", "query_cancel").
+      query_id:
+        type: string (UUID)
+        nullable: true
+        description: >
+          The query_id from the client message, if it was present
+          and parseable.
+      error:
+        type: object
+        fields:
+          code:
+            type: string
+            description: Error code (e.g., "ws.invalid_query").
+          message:
+            type: string
+            description: Human-readable error description.
 
 # =============================================================================
 # RESPONSE SCHEMAS
