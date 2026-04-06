@@ -1,6 +1,6 @@
 {
-  "version": "4.0.0",
-  "generated_at": "2026-03-30T00:00:00Z",
+  "version": "5.0.0",
+  "generated_at": "2026-04-06T00:00:00Z",
   "notes": {
     "url_query_params": "Pages with filters sync state to URL query params. Share a filtered URL and the recipient sees the same view. Invalid params are silently dropped.",
     "tk_component_testid_patterns": {
@@ -268,6 +268,12 @@
           "interactions": ["click"],
           "dynamic": true
         },
+        "query-integrations-bar": {
+          "element": "button",
+          "purpose": "Collapsible 'Available integrations' trigger on welcome state",
+          "interactions": ["click"],
+          "visibility": "conditional"
+        },
         "query-thread-container": {
           "element": "div",
           "purpose": "Conversation thread container",
@@ -485,15 +491,35 @@
           "interactions": ["read"],
           "dynamic": true
         },
+        "query-cancel-button": {
+          "element": "tk-button",
+          "purpose": "Cancel query during interpretation phase (ghost button in AI response header)",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"],
+          "visibility": "conditional"
+        },
+        "query-execution-cancel-button": {
+          "element": "tk-button",
+          "purpose": "Cancel query during execution phase (ghost button in execution header)",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled", "loading"],
+          "visibility": "conditional"
+        },
+        "query-cancelled-text": {
+          "element": "span",
+          "purpose": "Cancellation confirmation text (shown instead of error when user cancels)",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
         "query-failed-error-text": {
           "element": "p",
-          "purpose": "Error message when query fails",
+          "purpose": "Error message when query fails (not shown for cancellations)",
           "interactions": ["read"],
           "visibility": "conditional"
         },
         "query-failed-new-query-button": {
           "element": "tk-button",
-          "purpose": "New Query button shown after failure",
+          "purpose": "New Query button shown after failure or cancellation",
           "interactions": ["click"],
           "visibility": "conditional"
         },
@@ -501,6 +527,65 @@
           "element": "span",
           "purpose": "Rejection confirmation text",
           "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-clarification-prompt": {
+          "element": "div",
+          "purpose": "Clarification prompt container with question, options, and/or text input",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-clarification-question": {
+          "element": "div",
+          "purpose": "AI's clarification question text rendered as markdown",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-clarification-option-{option_id}": {
+          "element": "button",
+          "purpose": "Clickable option card for clarification response (dynamic, by option_id)",
+          "interactions": ["click"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "query-clarification-text-input": {
+          "element": "div",
+          "purpose": "Free text input container for clarification response",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        },
+        "query-clarification-textarea": {
+          "element": "textarea",
+          "purpose": "Free text textarea for typing clarification response",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "query-clarification-submit-button": {
+          "element": "tk-button",
+          "purpose": "Submit button for free text clarification response",
+          "interactions": ["click"],
+          "states": ["enabled", "disabled"],
+          "visibility": "conditional"
+        },
+        "query-conversation-turn-assistant-{index}": {
+          "element": "div",
+          "purpose": "Historical assistant turn wrapper in multi-turn conversation (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "query-conversation-turn-user-{index}": {
+          "element": "div",
+          "purpose": "User clarification response bubble in multi-turn conversation (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
+        },
+        "query-clarification-resolved-{index}": {
+          "element": "div",
+          "purpose": "Historical resolved clarification question (read-only, no interactive options)",
+          "interactions": ["read"],
+          "dynamic": true,
           "visibility": "conditional"
         }
       }
@@ -593,6 +678,13 @@
           "purpose": "Rejection text (detail view)",
           "interactions": ["read"],
           "visibility": "conditional"
+        },
+        "query-detail-conversation-user-{index}": {
+          "element": "div",
+          "purpose": "User clarification response bubble in conversation history (0-based index)",
+          "interactions": ["read"],
+          "dynamic": true,
+          "visibility": "conditional"
         }
       }
     },
@@ -608,8 +700,28 @@
         },
         "integration-connect-button": {
           "element": "tk-button",
-          "purpose": "Connect Integration header button",
+          "purpose": "Connect Integration header button (navigates to catalog)",
           "interactions": ["click"]
+        },
+        "integration-list-search": {
+          "element": "tk-search-input",
+          "purpose": "Search connected integrations (generates tk-search-input-integration-list)",
+          "interactions": ["type", "clear"],
+          "visibility": "conditional"
+        },
+        "integration-list-display-toggle-cards": {
+          "element": "button",
+          "purpose": "Switch to card display mode",
+          "interactions": ["click"],
+          "states": ["active", "inactive"],
+          "visibility": "conditional"
+        },
+        "integration-list-display-toggle-list": {
+          "element": "button",
+          "purpose": "Switch to list display mode",
+          "interactions": ["click"],
+          "states": ["active", "inactive"],
+          "visibility": "conditional"
         },
         "integration-empty-state": {
           "element": "tk-empty-state",
@@ -618,8 +730,8 @@
           "visibility": "conditional"
         },
         "integration-card-{id}": {
-          "element": "tk-card",
-          "purpose": "Individual integration card (dynamic, by UUID)",
+          "element": "tk-card | div",
+          "purpose": "Individual integration card or list row (dynamic, by UUID)",
           "interactions": ["read"],
           "dynamic": true
         },
@@ -650,43 +762,69 @@
         },
         "integration-card-test-button-{id}": {
           "element": "button",
-          "purpose": "Test connection button on card",
+          "purpose": "Test connection button on card or list row",
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"],
           "dynamic": true
         },
         "integration-card-disconnect-button-{id}": {
           "element": "button",
-          "purpose": "Disconnect button on card",
+          "purpose": "Disconnect button on card or list row",
           "interactions": ["click"],
           "dynamic": true
         }
       }
     },
-    "integration-connect-dialog": {
-      "route": null,
+    "integration-catalog": {
+      "route": "/integrations/connect",
       "auth_required": true,
       "admin_only": true,
       "testids": {
-        "integration-connect-dialog": {
+        "integration-catalog-container": {
           "element": "div",
-          "purpose": "Connect integration dialog container",
+          "purpose": "Integration catalog page container",
           "interactions": ["read"]
         },
-        "integration-type-card-aws": {
-          "element": "button",
-          "purpose": "AWS type selection card (with tk-integration-icon)",
-          "interactions": ["click"]
+        "integration-catalog-search": {
+          "element": "tk-search-input",
+          "purpose": "Search available integration types (generates tk-search-input-integration-catalog)",
+          "interactions": ["type", "clear"]
         },
-        "integration-type-card-github": {
+        "integration-catalog-display-toggle-cards": {
           "element": "button",
-          "purpose": "GitHub type selection card (with tk-integration-icon)",
-          "interactions": ["click"]
+          "purpose": "Switch catalog to card display mode",
+          "interactions": ["click"],
+          "states": ["active", "inactive"]
         },
-        "integration-type-card-google-workspace": {
+        "integration-catalog-display-toggle-list": {
           "element": "button",
-          "purpose": "Google Workspace type selection card (with tk-integration-icon)",
-          "interactions": ["click"]
+          "purpose": "Switch catalog to list display mode",
+          "interactions": ["click"],
+          "states": ["active", "inactive"]
+        },
+        "integration-catalog-item-{type}": {
+          "element": "tk-card | div",
+          "purpose": "Catalog item card or list row (dynamic, by integration type e.g. aws, github, google_workspace)",
+          "interactions": ["read"],
+          "dynamic": true
+        },
+        "integration-catalog-connect-button-{type}": {
+          "element": "tk-button",
+          "purpose": "Connect button for a catalog item (navigates to /integrations/connect/:type)",
+          "interactions": ["click"],
+          "dynamic": true
+        }
+      }
+    },
+    "integration-connect": {
+      "route": "/integrations/connect/:type",
+      "auth_required": true,
+      "admin_only": true,
+      "testids": {
+        "integration-connect-page": {
+          "element": "div",
+          "purpose": "Connect integration page container",
+          "interactions": ["read"]
         },
         "integration-connect-display-name-input": {
           "element": "input (via tk-input)",
@@ -741,16 +879,35 @@
           "interactions": ["click"],
           "states": ["enabled", "disabled", "loading"]
         },
+        "integration-connect-error-text": {
+          "element": "div",
+          "purpose": "Error message on connect page",
+          "interactions": ["read"],
+          "visibility": "conditional"
+        }
+      }
+    },
+    "integration-connect-dialog": {
+      "route": null,
+      "auth_required": true,
+      "admin_only": true,
+      "deprecated": "Superseded by integration-catalog + integration-connect pages. Component file still exists but is no longer imported.",
+      "testids": {
+        "integration-connect-dialog": {
+          "element": "div",
+          "purpose": "Connect integration dialog container",
+          "interactions": ["read"]
+        },
+        "integration-type-card-{type}": {
+          "element": "button",
+          "purpose": "Type selection card (dynamic, e.g. aws, github, google-workspace)",
+          "interactions": ["click"],
+          "dynamic": true
+        },
         "integration-connect-back-button": {
           "element": "button",
           "purpose": "Back to type selection step",
           "interactions": ["click"]
-        },
-        "integration-connect-error-text": {
-          "element": "div",
-          "purpose": "Error message in connect dialog",
-          "interactions": ["read"],
-          "visibility": "conditional"
         }
       }
     },
@@ -1038,7 +1195,7 @@
       "url_query_params": {
         "action": { "type": "comma-separated enum", "allowed": ["user_registered", "user_login", "user_invited", "user_removed", "user_role_changed", "integration_connected", "integration_disconnected", "integration_health_checked", "query_submitted", "query_plan_approved", "query_plan_rejected", "organization_updated"], "description": "Filter by action type" },
         "user": { "type": "comma-separated UUID", "description": "Filter by user IDs" },
-        "limit": { "type": "number", "allowed": [10, 25, 50, 100], "default": 25, "description": "Rows per page" }
+        "limit": { "type": "number", "allowed": [25, 50, 100, 200], "default": 50, "description": "Rows per page" }
       },
       "testids": {
         "activity-log-container": {

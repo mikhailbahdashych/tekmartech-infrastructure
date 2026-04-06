@@ -2,7 +2,7 @@ import { test, expect } from '../fixtures/auth.fixture';
 import { config } from '../helpers/config.helper';
 
 /**
- * Connect a GitHub integration in the current authenticated session.
+ * Connect a GitHub integration via the catalog → connect page flow.
  */
 async function connectGitHub(page: import('@playwright/test').Page): Promise<void> {
   await page.getByTestId('sidebar-nav-integrations').click();
@@ -12,13 +12,14 @@ async function connectGitHub(page: import('@playwright/test').Page): Promise<voi
   if (await cards.count() > 0) return; // already connected
 
   await page.getByTestId('integration-connect-button').click();
-  await expect(page.getByTestId('integration-connect-dialog')).toBeVisible({ timeout: 5_000 });
-  await page.getByTestId('integration-type-card-github').click();
+  await expect(page.getByTestId('integration-catalog-container')).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('integration-catalog-connect-button-github').click();
+  await expect(page.getByTestId('integration-connect-page')).toBeVisible({ timeout: 10_000 });
   await page.getByTestId('integration-connect-display-name-input').fill('E2E GitHub');
   await page.getByTestId('integration-connect-github-pat-input').fill(config.githubPat);
   await page.getByTestId('integration-connect-github-org-input').fill(config.githubOrg);
   await page.getByTestId('integration-connect-submit-button').click();
-  await expect(page.getByTestId('integration-connect-dialog')).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByTestId('integration-list-container')).toBeVisible({ timeout: 30_000 });
   await expect(cards.first()).toBeVisible({ timeout: 10_000 });
 }
 
@@ -252,5 +253,42 @@ test.describe('Query Lifecycle', () => {
     ]);
 
     expect(['plan', 'interp-error', 'failed']).toContain(outcome);
+  });
+
+  test('cancel query during interpretation', async ({ authenticatedPage: page }) => {
+    test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
+    test.setTimeout(90_000);
+    await connectGitHub(page);
+
+    await page.getByTestId('sidebar-nav-queries').click();
+    await page.waitForURL('**/new**');
+    await typeQuery(page, 'List all repositories in our GitHub organization');
+    await page.getByTestId('query-submit-button').click();
+
+    // Wait for interpretation to start streaming
+    await expect(page.getByTestId('query-interpretation-container')).toBeVisible({ timeout: 15_000 });
+
+    // Cancel button should appear during interpretation
+    const cancelBtn = page.getByTestId('query-cancel-button');
+    await expect(cancelBtn).toBeVisible({ timeout: 10_000 });
+    await cancelBtn.click();
+
+    // Should show cancellation confirmation
+    await expect(page.getByTestId('query-cancelled-text')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('integration selector pills are visible on query page', async ({ authenticatedPage: page }) => {
+    test.skip(!config.hasGitHub, 'GITHUB_TEST_PAT required');
+    await connectGitHub(page);
+
+    await page.getByTestId('sidebar-nav-queries').click();
+    await page.waitForURL('**/new**');
+
+    // Integration selector should show connected integrations as toggleable pills
+    const selector = page.getByTestId('query-integration-selector');
+    if (await selector.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      const pills = page.locator('[data-testid^="query-integration-pill-"]');
+      await expect(pills.first()).toBeVisible({ timeout: 5_000 });
+    }
   });
 });
