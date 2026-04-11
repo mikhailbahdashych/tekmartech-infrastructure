@@ -1,9 +1,20 @@
 # Tekmar Internal API Specification
 # Boundary 2: Application API (tekmar-api) ↔ Pipeline Service (tekmar-pipeline)
 #
-# Version: 1.0.0 (MVP)
+# Version: 1.1.0
 # Status: Active
-# Last updated: 2026-03-19
+# Last updated: 2026-04-05
+#
+# Changelog:
+#   1.1.0 (2026-04-05):
+#     - Added multi-turn conversation support to POST /interpret.
+#     - Added `conversation_history` optional field to /interpret request.
+#     - Added `interpretation_clarification_needed` streaming event.
+#     - Replaced the "future extension" note with full multi-turn specification.
+#     - Pipeline remains stateless: conversation history is passed with each request.
+#
+#   1.0.0 (2026-03-19):
+#     - Initial MVP specification.
 #
 # This specification defines the HTTP endpoints that the Application API
 # uses to communicate with the Pipeline Service. This boundary is internal:
@@ -183,13 +194,26 @@ endpoints:
   # operations are available. Credentials are sent only with the
   # /execute endpoint when tools are actually invoked.
   #
-  # Future extension: In a future version, this endpoint will support
-  # multi-turn conversation where the Interpreter can ask clarifying
-  # questions (with structured option menus) before generating the plan.
-  # The streaming infrastructure built here supports that extension
-  # naturally by adding new event types (e.g., clarification_needed
-  # with structured options). The MVP is single-turn: one question in,
-  # one streamed analysis + plan out.
+  # Multi-turn conversation support:
+  #   The /interpret endpoint supports multi-turn conversation. On the
+  #   first call, the API sends query_text and tool_catalog. The Pipeline
+  #   streams analysis and either produces a plan (single-turn) or emits
+  #   an interpretation_clarification_needed event (multi-turn). When the
+  #   user responds, the API calls /interpret again with the original
+  #   query_text, tool_catalog, AND a conversation_history array containing
+  #   all previous turns. The Pipeline rebuilds context from the history
+  #   and continues reasoning. This repeats until a plan is generated or
+  #   interpretation fails. The Pipeline remains stateless — all context
+  #   is passed in each request.
+  #
+  # Turn flow:
+  #   1. API → POST /interpret { query_text, tool_catalog }
+  #   2. Pipeline streams: started → text_deltas → clarification_needed
+  #   3. API stores turn in DB, relays clarification to frontend via WS
+  #   4. User responds via WS → API stores response
+  #   5. API → POST /interpret { query_text, tool_catalog, conversation_history }
+  #   6. Pipeline streams: started → text_deltas → plan_generated (or another clarification)
+  #   7. Repeat until plan or failure.
   # ---------------------------------------------------------------------------
   interpret:
     method: POST
@@ -199,7 +223,11 @@ endpoints:
       query plan, streaming the AI's analysis in real time. The
       Pipeline Service sends the query text and tool catalog to the
       Interpreter (LLM) and streams back the AI's reasoning as text
-      deltas, followed by the complete query plan.
+      deltas, followed by either the complete query plan (single-turn)
+      or a clarification question (multi-turn). When conversation
+      history is provided, the Interpreter continues from where the
+      previous turn left off, using the accumulated context to refine
+      its understanding before producing a plan.
     timeout_seconds: 60
     timeout_note: >
       LLM interpretation typically completes in 3-15 seconds. The
@@ -256,6 +284,50 @@ endpoints:
             empty array or omitted entirely; the template library
             grows over time.
 
+        conversation_history:
+          type: array of conversation_turn
+          required: false
+          description: >
+            The conversation history from previous turns of a
+            multi-turn interpretation. Omitted on the first turn
+            (single-turn behavior). When present, the Interpreter
+            uses this history to rebuild context and continue
+            reasoning from where the previous turn ended.
+
+            Each turn is an object with a role ("assistant" or
+            "user") and role-specific fields:
+
+            Assistant turns contain:
+            - role: "assistant"
+            - content: string — the AI's analysis text from that turn
+              (accumulated text_delta values)
+            - clarification: object (optional) — if the assistant
+              asked a clarification question, contains:
+              - clarification_id: string (UUID)
+              - question: string
+              - options: array of { option_id, label, description? }
+                (optional)
+              - allows_free_text: boolean
+
+            User turns contain:
+            - role: "user"
+            - response_type: "option_selection" | "free_text"
+            - selected_option_id: string (when response_type is
+              option_selection)
+            - text: string (when response_type is free_text, or
+              optional additional context with option_selection)
+
+            The history alternates: assistant turn, user turn,
+            assistant turn, user turn, etc. The first turn is
+            always from the assistant. The last turn before the
+            current request is always from the user (the user's
+            response that triggered this continuation).
+
+            The Pipeline Service uses this history to construct
+            the LLM's conversation context, prepending the
+            previous analysis and Q&A before generating the
+            current turn's response.
+
     response:
       # -----------------------------------------------------------------
       # Pre-stream errors (returned BEFORE streaming begins)
@@ -291,13 +363,20 @@ endpoints:
 
           The stream always begins with an interpretation_started
           event and always ends with exactly one terminal event:
-          interpretation_plan_generated, interpretation_failed, or
+          interpretation_plan_generated, interpretation_failed,
+          interpretation_clarification_needed, or
           interpretation_error.
 
           Between these, interpretation_text_delta events stream the
           AI's analysis text token by token. The Application API
           relays these to the Interface Layer via WebSocket so the
           user sees the AI's thinking appear in real time.
+
+          In multi-turn conversation, interpretation_clarification_needed
+          ends the current stream. The Application API stores the
+          conversation turn and waits for the user's response.
+          When the user responds, a new POST /interpret call with
+          conversation_history starts a fresh stream for the next turn.
 
         events:
 
@@ -331,6 +410,59 @@ endpoints:
                   few tokens (1-20 characters). The Application API
                   appends this to the cumulative interpretation text
                   and relays it to the WebSocket.
+              timestamp: { type: string (ISO 8601 datetime) }
+
+          interpretation_clarification_needed:
+            terminal: true
+            description: >
+              Terminal event for this turn of interpretation. The
+              Interpreter has determined it needs additional
+              information from the user before it can generate a
+              plan. The Application API stores this as a
+              conversation turn, relays the clarification to the
+              frontend via WebSocket (as query_clarification_needed),
+              and waits for the user's response. When the user
+              responds, the API calls POST /interpret again with
+              the conversation_history.
+
+              This event ends the current streaming response. A new
+              /interpret call with conversation_history starts a
+              new streaming response for the next turn. The Pipeline
+              remains stateless between turns.
+            fields:
+              event: { type: string, value: "interpretation_clarification_needed" }
+              query_id: { type: string (UUID) }
+              clarification_id:
+                type: string (UUID)
+                description: >
+                  Unique identifier for this clarification request.
+                  Used to correlate the user's response.
+              question:
+                type: string
+                description: >
+                  The AI's clarification question in natural language.
+                  May contain markdown formatting.
+              options:
+                type: array of object
+                required: false
+                description: >
+                  Structured choices for the user. Each option has
+                  an option_id (string), label (string), and optional
+                  description (string). If absent, the user should
+                  respond with free text.
+              allows_free_text:
+                type: boolean
+                default: true
+                description: >
+                  Whether the user can type a free-text response
+                  instead of selecting an option.
+              full_interpretation_text:
+                type: string
+                description: >
+                  The complete interpretation text from this turn
+                  (all text_delta values concatenated). The
+                  Application API stores this as the assistant's
+                  content in the conversation history.
               timestamp: { type: string (ISO 8601 datetime) }
 
           interpretation_plan_generated:
