@@ -4,10 +4,10 @@ set -euo pipefail
 # Tekmar E2E Browser Test Runner
 # Usage: ./run-e2e.sh [playwright args...]
 # Examples:
-#   ./run-e2e.sh                          # Run all tests (development)
-#   NODE_ENV=production ./run-e2e.sh      # Run against production env
-#   ./run-e2e.sh --headed                 # Watch tests in browser
-#   ./run-e2e.sh specs/01-auth*           # Run auth tests only
+# ./run-e2e.sh                          # Run all tests (development)
+# NODE_ENV=production ./run-e2e.sh      # Run against production env
+# ./run-e2e.sh --headed                 # Watch tests in browser
+# ./run-e2e.sh specs/01-auth*           # Run auth tests only
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
