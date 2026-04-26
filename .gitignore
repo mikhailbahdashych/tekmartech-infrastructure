@@ -1,5 +1,6 @@
 # OS
 .DS_Store
+.idea/
 
 # Environment files with secrets (keep .env.example committed)
 env/.env.development
